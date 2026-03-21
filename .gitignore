@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+app.db
+test_auth.db
+.env
+conciliador_web.log
+conciliation_history.json
+*.xlsx
+*.xls
+*.pdf

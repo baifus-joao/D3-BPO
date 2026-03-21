@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: painel-d3
+    runtime: python
+    plan: starter
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.3
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SESSION_HTTPS_ONLY
+        value: "true"
+      - key: SESSION_SAME_SITE
+        value: "lax"
+      - key: SESSION_DOMAIN
+        sync: false
+      - key: D3_BOOTSTRAP_ADMIN_NAME
+        value: Administrador D3
+      - key: D3_BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: D3_BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+

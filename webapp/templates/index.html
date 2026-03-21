@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel D3 | Conciliação</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <main class="page app-shell">
+        <header class="topbar">
+            <div>
+                <p class="section-kicker">Painel interno D3</p>
+                <h1 class="app-title">Conciliação de relatórios</h1>
+                <p class="topbar-copy">Ambiente interno para execução operacional e rastreabilidade do financeiro.</p>
+            </div>
+            <div class="user-badge">
+                <span class="user-status">Sessão ativa</span>
+                <strong>{{ current_user.name }}</strong>
+                <span>{{ current_user.role }} · {{ current_user.email }}</span>
+                <form action="/logout" method="post">
+                    <button type="submit" class="ghost-button">Sair</button>
+                </form>
+            </div>
+        </header>
+
+        {% if flash %}
+        <div class="flash flash-{{ flash.level }}">{{ flash.message }}</div>
+        {% endif %}
+
+        <section class="dashboard-grid">
+            <section class="card upload-card">
+                <div class="card-header">
+                    <div>
+                        <p class="section-kicker">Nova execução</p>
+                        <h2>Processar conciliação</h2>
+                    </div>
+                    <p class="section-copy">Envie os relatórios de vendas e recebimentos para gerar o consolidado da operação.</p>
+                </div>
+
+                {% if error %}
+                <div class="alert" role="alert">{{ error }}</div>
+                {% endif %}
+
+                <form action="/conciliar" method="post" enctype="multipart/form-data" class="form" id="conciliation-form" novalidate>
+                    <label class="field dropzone">
+                        <span>Relatório de vendas</span>
+                        <input type="file" name="vendas" accept=".xlsx,.xls" required>
+                        <em class="drop-copy">Arraste o arquivo aqui ou clique para selecionar.</em>
+                        <small class="file-hint">{{ submitted_names.get("vendas", "Nenhum arquivo selecionado.") }}</small>
+                    </label>
+
+                    <label class="field dropzone">
+                        <span>Relatório de recebimentos</span>
+                        <input type="file" name="recebimentos" accept=".xlsx,.xls" required>
+                        <em class="drop-copy">Arraste o arquivo aqui ou clique para selecionar.</em>
+                        <small class="file-hint">{{ submitted_names.get("recebimentos", "Nenhum arquivo selecionado.") }}</small>
+                    </label>
+
+                    <div class="inline-notes">
+                        <p class="limit-note">Limite por arquivo: 15 MB.</p>
+                        <p class="limit-note">Formatos aceitos: `.xlsx` e `.xls`.</p>
+                        <p class="limit-note">Tempo limite: 60 segundos.</p>
+                    </div>
+
+                    <div class="form-error" id="form-error" hidden></div>
+
+                    <div class="actions">
+                        <button type="submit" id="submit-button">Gerar conciliação</button>
+                        <p class="processing" id="processing-text" hidden>Processando arquivos. Aguarde.</p>
+                    </div>
+                </form>
+            </section>
+
+            <aside class="sidebar-stack">
+                <section class="card compact-card">
+                    <p class="section-kicker">Sessão</p>
+                    <div class="stats-grid">
+                        <article class="stat">
+                            <span class="metric-label">Colaborador</span>
+                            <strong>{{ current_user.name }}</strong>
+                        </article>
+                        <article class="stat">
+                            <span class="metric-label">Perfil</span>
+                            <strong>{{ current_user.role }}</strong>
+                        </article>
+                        <article class="stat">
+                            <span class="metric-label">Execuções visíveis</span>
+                            <strong>{{ history|length }}</strong>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="card compact-card">
+                    <p class="section-kicker">Checklist</p>
+                    <ul class="plain-list">
+                        <li>Confira se os dois relatórios pertencem ao mesmo período.</li>
+                        <li>Use exportações originais, sem edição manual.</li>
+                        <li>Baixe o resultado e arquive no fluxo do dia.</li>
+                    </ul>
+                </section>
+            </aside>
+        </section>
+
+        <section class="card history-card">
+            <div class="card-header">
+                <div>
+                    <p class="section-kicker">Últimas execuções</p>
+                    <h2>Histórico de processamento</h2>
+                </div>
+                <p class="section-copy">Rastreabilidade das últimas conciliações executadas no sistema.</p>
+            </div>
+
+            {% if history %}
+            <div class="history-table">
+                <div class="history-row history-head">
+                    <span>Data/Hora</span>
+                    <span>Colaborador</span>
+                    <span>Arquivos</span>
+                    <span>Status</span>
+                    <span>Volume</span>
+                    <span>Duração</span>
+                </div>
+                {% for item in history %}
+                <div class="history-row">
+                    <span>{{ item.executed_at }}</span>
+                    <span>{{ item.user_name }}</span>
+                    <span>{{ item.arquivo_vendas }} / {{ item.arquivo_recebimentos }}</span>
+                    <span>{{ item.status }}</span>
+                    <span>{{ item.qtde_total_processado }} linhas</span>
+                    <span>{{ item.duracao_ms }} ms</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-state">Nenhuma execução registrada ainda.</p>
+            {% endif %}
+        </section>
+
+        {% if is_admin %}
+        <section class="card admin-card">
+            <div class="card-header">
+                <div>
+                    <p class="section-kicker">Administração</p>
+                    <h2>Gestão de usuários</h2>
+                </div>
+                <p class="section-copy">Criação, atualização de perfil e redefinição de senha de usuários internos.</p>
+            </div>
+
+            <section class="admin-block">
+                <h3>Novo usuário</h3>
+                <form action="/admin/users" method="post" class="admin-form admin-form-grid">
+                    <input name="name" placeholder="Nome completo" required>
+                    <input name="email" type="email" placeholder="E-mail corporativo" required>
+                    <select name="role" required>
+                        <option value="colaborador">Colaborador</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <input name="password" type="password" placeholder="Senha inicial" minlength="8" required>
+                    <button type="submit">Criar usuário</button>
+                </form>
+            </section>
+
+            <section class="admin-block">
+                <h3>Usuários cadastrados</h3>
+                <div class="user-list">
+                    {% for user in users %}
+                    <article class="user-card">
+                        <form action="/admin/users/{{ user.id }}/update" method="post" class="admin-form">
+                            <div class="user-card-header">
+                                <strong>{{ user.name }}</strong>
+                                <span class="badge">{{ user.role }}</span>
+                            </div>
+                            <input name="name" value="{{ user.name }}" required>
+                            <input name="email" type="email" value="{{ user.email }}" required>
+                            <select name="role" required>
+                                <option value="colaborador" {% if user.role == "colaborador" %}selected{% endif %}>Colaborador</option>
+                                <option value="admin" {% if user.role == "admin" %}selected{% endif %}>Admin</option>
+                            </select>
+                            <label class="toggle">
+                                <input type="checkbox" name="is_active" {% if user.is_active %}checked{% endif %}>
+                                <span>Usuário ativo</span>
+                            </label>
+                            <button type="submit">Salvar alterações</button>
+                        </form>
+                        <form action="/admin/users/{{ user.id }}/reset-password" method="post" class="admin-form reset-form">
+                            <input name="new_password" type="password" placeholder="Nova senha" minlength="8" required>
+                            <button type="submit" class="secondary-action">Redefinir senha</button>
+                        </form>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+        </section>
+        {% endif %}
+    </main>
+    <script>
+        const form = document.getElementById("conciliation-form");
+        const fileInputs = Array.from(form.querySelectorAll('input[type="file"]'));
+        const submitButton = document.getElementById("submit-button");
+        const processingText = document.getElementById("processing-text");
+        const formError = document.getElementById("form-error");
+        const dropzones = Array.from(document.querySelectorAll(".dropzone"));
+        const maxBytes = 15 * 1024 * 1024;
+
+        function setError(message) {
+            formError.textContent = message;
+            formError.hidden = !message;
+        }
+
+        function updateHints() {
+            fileInputs.forEach((input) => {
+                const hint = input.parentElement.querySelector(".file-hint");
+                const file = input.files[0];
+                hint.textContent = file ? file.name : "Nenhum arquivo selecionado.";
+            });
+        }
+
+        fileInputs.forEach((input) => input.addEventListener("change", updateHints));
+
+        dropzones.forEach((zone) => {
+            const input = zone.querySelector('input[type="file"]');
+            ["dragenter", "dragover"].forEach((eventName) => {
+                zone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    zone.classList.add("dragover");
+                });
+            });
+            ["dragleave", "drop"].forEach((eventName) => {
+                zone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    zone.classList.remove("dragover");
+                });
+            });
+            zone.addEventListener("drop", (event) => {
+                const droppedFiles = event.dataTransfer.files;
+                if (!droppedFiles || droppedFiles.length === 0) {
+                    return;
+                }
+                input.files = droppedFiles;
+                updateHints();
+            });
+        });
+
+        form.addEventListener("submit", (event) => {
+            setError("");
+            const [vendas, recebimentos] = fileInputs.map((input) => input.files[0]);
+            if (!vendas || !recebimentos) {
+                event.preventDefault();
+                setError("Selecione os dois arquivos antes de continuar.");
+                return;
+            }
+            const allowed = [".xlsx", ".xls"];
+            const invalid = [vendas, recebimentos].find((file) => {
+                const name = file.name.toLowerCase();
+                return !allowed.some((suffix) => name.endsWith(suffix));
+            });
+            if (invalid) {
+                event.preventDefault();
+                setError("Os dois arquivos precisam estar em formato Excel (.xlsx ou .xls).");
+                return;
+            }
+            const oversized = [vendas, recebimentos].find((file) => file.size > maxBytes);
+            if (oversized) {
+                event.preventDefault();
+                setError("Cada arquivo deve ter no máximo 15 MB.");
+                return;
+            }
+            if (vendas.name === recebimentos.name && vendas.size === recebimentos.size) {
+                event.preventDefault();
+                setError("Os arquivos parecem ser os mesmos. Escolha um relatório diferente em cada campo.");
+                return;
+            }
+            submitButton.disabled = true;
+            submitButton.textContent = "Processando...";
+            processingText.hidden = false;
+        });
+
+        updateHints();
+    </script>
+</body>
+</html>
