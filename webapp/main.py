@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
 import shutil
 import tempfile
 import time
@@ -20,19 +21,50 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.middleware.sessions import SessionMiddleware
 
+from conciliador.core.ai_layout import is_ai_layout_enabled
 from conciliador.service import ConciliationUserError, run_conciliation
 
-from .db import Base, SessionLocal, engine
+from .db import Base, DATABASE_URL, SessionLocal, engine
 from .models import ExecutionLog, User
 from .security import hash_password, verify_password
 
 
 BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 DOWNLOADS: dict[str, dict[str, object]] = {}
+
+
+def _load_local_env() -> None:
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_local_env()
+
 MAX_UPLOAD_SIZE = 15 * 1024 * 1024
 PROCESSING_TIMEOUT_SECONDS = 60
 LOGGER = logging.getLogger("conciliador.web")
+SESSION_MAX_AGE_SECONDS = int(getenv("SESSION_MAX_AGE_SECONDS", str(60 * 60 * 8)))
+LOGIN_MAX_ATTEMPTS = int(getenv("LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_WINDOW_SECONDS = int(getenv("LOGIN_WINDOW_SECONDS", str(15 * 60)))
+LOGIN_LOCK_SECONDS = int(getenv("LOGIN_LOCK_SECONDS", str(10 * 60)))
+DOWNLOAD_TTL_SECONDS = int(getenv("DOWNLOAD_TTL_SECONDS", str(60 * 60)))
+LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+LOGIN_LOCKS: dict[str, float] = {}
+
 SESSION_SECRET = getenv("SESSION_SECRET", "dev-session-secret-change-me")
 SESSION_DOMAIN = getenv("SESSION_DOMAIN")
 SESSION_HTTPS_ONLY = getenv("SESSION_HTTPS_ONLY", "false").lower() == "true"
@@ -45,18 +77,32 @@ app.add_middleware(
     same_site=SESSION_SAME_SITE,
     https_only=SESSION_HTTPS_ONLY,
     domain=SESSION_DOMAIN,
+    max_age=SESSION_MAX_AGE_SECONDS,
 )
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 if not LOGGER.handlers:
     LOGGER.setLevel(logging.INFO)
-    handler = logging.FileHandler(BASE_DIR.parent / "conciliador_web.log", encoding="utf-8")
+    handler = logging.FileHandler(PROJECT_ROOT / "conciliador_web.log", encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     LOGGER.addHandler(handler)
 
 
 def _cleanup_tempdir(tempdir: str) -> None:
     shutil.rmtree(tempdir, ignore_errors=True)
+
+
+def _cleanup_expired_downloads(now: float | None = None) -> None:
+    reference = now or time.time()
+    expired_tokens = [
+        token
+        for token, item in DOWNLOADS.items()
+        if reference - float(item.get("created_at", reference)) > DOWNLOAD_TTL_SECONDS
+    ]
+    for token in expired_tokens:
+        item = DOWNLOADS.pop(token, None)
+        if item:
+            _cleanup_tempdir(str(item["tempdir"]))
 
 
 def _set_flash(request: Request, message: str, level: str = "info") -> None:
@@ -67,6 +113,66 @@ def _pop_flash(request: Request) -> dict[str, str] | None:
     return request.session.pop("flash", None)
 
 
+def _get_csrf_token(request: Request) -> str:
+    token = request.session.get("csrf_token")
+    if not token:
+        token = uuid.uuid4().hex
+        request.session["csrf_token"] = token
+    return token
+
+
+async def _validate_csrf(request: Request) -> None:
+    form = await request.form()
+    submitted = str(form.get("csrf_token", ""))
+    expected = str(request.session.get("csrf_token", ""))
+    if not submitted or not expected or submitted != expected:
+        raise ConciliationUserError("Sessao invalida ou expirada. Atualize a pagina e tente novamente.")
+
+
+def _client_identity(request: Request, email: str | None = None) -> str:
+    host = request.client.host if request.client else "unknown"
+    normalized_email = email.strip().lower() if email else ""
+    return f"{host}:{normalized_email}"
+
+
+def _prune_login_state(now: float) -> None:
+    for key, attempts in list(LOGIN_ATTEMPTS.items()):
+        recent = [ts for ts in attempts if now - ts <= LOGIN_WINDOW_SECONDS]
+        if recent:
+            LOGIN_ATTEMPTS[key] = recent
+        else:
+            LOGIN_ATTEMPTS.pop(key, None)
+
+    for key, locked_until in list(LOGIN_LOCKS.items()):
+        if locked_until <= now:
+            LOGIN_LOCKS.pop(key, None)
+
+
+def _login_lock_message(seconds_remaining: int) -> str:
+    minutes = max(1, round(seconds_remaining / 60))
+    return f"Muitas tentativas de login. Aguarde cerca de {minutes} minuto(s) e tente novamente."
+
+
+def _count_active_admins(db: Session) -> int:
+    return int(
+        db.scalar(
+            select(func.count()).select_from(User).where(User.role == "admin", User.is_active.is_(True))
+        )
+        or 0
+    )
+
+
+def _history_status_class(status_value: str) -> str:
+    normalized = status_value.strip().lower()
+    if normalized == "concluído" or normalized == "concluido":
+        return "success"
+    if normalized == "timeout":
+        return "warning"
+    if normalized == "erro":
+        return "error"
+    return "neutral"
+
+
 def _bootstrap_admin(db: Session) -> None:
     admin_exists = db.scalar(select(func.count()).select_from(User).where(User.role == "admin"))
     if admin_exists:
@@ -75,6 +181,9 @@ def _bootstrap_admin(db: Session) -> None:
     email = getenv("D3_BOOTSTRAP_ADMIN_EMAIL", "admin@d3financeiro.local").strip().lower()
     password = getenv("D3_BOOTSTRAP_ADMIN_PASSWORD", "Admin123!").strip()
     name = getenv("D3_BOOTSTRAP_ADMIN_NAME", "Administrador D3").strip()
+
+    if getenv("RENDER") and (email == "admin@d3financeiro.local" or password == "Admin123!"):
+        raise RuntimeError("Defina credenciais bootstrap do admin antes do deploy em producao.")
 
     db.add(
         User(
@@ -93,7 +202,8 @@ def _init_db() -> None:
     if getenv("RENDER") and SESSION_SECRET == "dev-session-secret-change-me":
         raise RuntimeError("Defina SESSION_SECRET antes do deploy em producao.")
 
-    Base.metadata.create_all(bind=engine)
+    if DATABASE_URL.startswith("sqlite"):
+        Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         _bootstrap_admin(db)
 
@@ -101,6 +211,33 @@ def _init_db() -> None:
 @app.on_event("startup")
 def on_startup() -> None:
     _init_db()
+    _cleanup_expired_downloads()
+    LOGGER.info(
+        "startup_config ai_layout_enabled=%s openai_layout_model=%s session_domain=%s",
+        is_ai_layout_enabled(),
+        getenv("OPENAI_LAYOUT_MODEL", ""),
+        SESSION_DOMAIN or "",
+    )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "script-src 'self' 'unsafe-inline'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    return response
 
 
 def _get_db() -> Session:
@@ -154,6 +291,13 @@ def _require_user(request: Request, db: Session) -> User | None:
     if not user_id:
         return None
 
+    now = int(time.time())
+    last_seen_at = int(request.session.get("last_seen_at", now))
+    if now - last_seen_at > SESSION_MAX_AGE_SECONDS:
+        request.session.clear()
+        return None
+    request.session["last_seen_at"] = now
+
     user = db.get(User, user_id)
     if not user or not user.is_active:
         request.session.clear()
@@ -179,6 +323,7 @@ def _load_history(db: Session, limit: int = 20) -> list[dict[str, object]]:
             "qtde_vendas_pagas_sem_recebimento": row.vendas_sem_recebimento,
             "duracao_ms": row.duracao_ms,
             "status": row.status,
+            "status_class": _history_status_class(row.status),
             "detalhe": row.detalhe,
         }
         for row in rows
@@ -197,6 +342,7 @@ def _render_login(request: Request, error: str | None = None) -> HTMLResponse:
         {
             "error": error,
             "flash": _pop_flash(request),
+            "csrf_token": _get_csrf_token(request),
         },
     )
 
@@ -219,6 +365,7 @@ def _render_dashboard(
             "users": _load_users(db) if _is_admin(user) else [],
             "flash": _pop_flash(request),
             "is_admin": _is_admin(user),
+            "csrf_token": _get_csrf_token(request),
         },
     )
 
@@ -245,18 +392,47 @@ async def healthz():
 
 @app.post("/login")
 async def login(request: Request, email: str = Form(...), password: str = Form(...)):
+    try:
+        await _validate_csrf(request)
+    except ConciliationUserError as exc:
+        return _render_login(request, str(exc))
+    normalized_email = email.strip().lower()
+    identity = _client_identity(request, normalized_email)
+    now = time.time()
+    _prune_login_state(now)
+
+    locked_until = LOGIN_LOCKS.get(identity)
+    if locked_until and locked_until > now:
+        return _render_login(request, _login_lock_message(int(locked_until - now)))
+
     with _get_db() as db:
-        user = db.scalar(select(User).where(User.email == email.strip().lower()))
+        user = db.scalar(select(User).where(User.email == normalized_email))
         if not user or not user.is_active or not verify_password(password, user.password_hash):
+            attempts = LOGIN_ATTEMPTS.get(identity, [])
+            attempts.append(now)
+            LOGIN_ATTEMPTS[identity] = [ts for ts in attempts if now - ts <= LOGIN_WINDOW_SECONDS]
+            if len(LOGIN_ATTEMPTS[identity]) >= LOGIN_MAX_ATTEMPTS:
+                LOGIN_LOCKS[identity] = now + LOGIN_LOCK_SECONDS
+                LOGIN_ATTEMPTS.pop(identity, None)
+                return _render_login(request, _login_lock_message(LOGIN_LOCK_SECONDS))
             return _render_login(request, "Credenciais inválidas.")
 
+        LOGIN_ATTEMPTS.pop(identity, None)
+        LOGIN_LOCKS.pop(identity, None)
         request.session["user_id"] = user.id
+        request.session["last_seen_at"] = int(now)
         _set_flash(request, f"Sessão iniciada como {user.name}.", "success")
         return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/logout")
 async def logout(request: Request):
+    try:
+        await _validate_csrf(request)
+    except ConciliationUserError:
+        request.session.clear()
+        _set_flash(request, "Sessao expirada. Entre novamente.", "error")
+        return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
     request.session.clear()
     _set_flash(request, "Sessão encerrada.", "success")
     return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
@@ -306,10 +482,15 @@ async def conciliar(
     vendas: UploadFile = File(...),
     recebimentos: UploadFile = File(...),
 ):
+    _cleanup_expired_downloads()
     with _get_db() as db:
         user = _require_user(request, db)
         if not user:
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        try:
+            await _validate_csrf(request)
+        except ConciliationUserError as exc:
+            return _render_dashboard(request, db, user, str(exc))
 
         filenames = {
             "vendas": vendas.filename or "vendas.xlsx",
@@ -416,6 +597,7 @@ async def conciliar(
             "tempdir": tempdir,
             "path": result.arquivo_saida,
             "download_name": download_name,
+            "created_at": time.time(),
             "summary": {
                 "arquivo_vendas": filenames["vendas"],
                 "arquivo_recebimentos": filenames["recebimentos"],
@@ -460,6 +642,7 @@ async def conciliar(
                 "summary": DOWNLOADS[token]["summary"],
                 "current_user": _serialize_user(user),
                 "history": _load_history(db, limit=5),
+                "csrf_token": _get_csrf_token(request),
             },
         )
 
@@ -475,6 +658,11 @@ async def create_user(
     with _get_db() as db:
         user = _require_user(request, db)
         if not user or not _is_admin(user):
+            return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+        try:
+            await _validate_csrf(request)
+        except ConciliationUserError as exc:
+            _set_flash(request, str(exc), "error")
             return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
         normalized_email = email.strip().lower()
@@ -515,6 +703,11 @@ async def update_user(
         current_user = _require_user(request, db)
         if not current_user or not _is_admin(current_user):
             return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+        try:
+            await _validate_csrf(request)
+        except ConciliationUserError as exc:
+            _set_flash(request, str(exc), "error")
+            return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
         target = db.get(User, user_id)
         if not target:
@@ -529,10 +722,18 @@ async def update_user(
 
         target.name = name.strip()
         target.email = normalized_email
-        target.role = role if role in {"admin", "colaborador"} else target.role
-        target.is_active = is_active == "on"
+        new_role = role if role in {"admin", "colaborador"} else target.role
+        new_is_active = is_active == "on"
         if target.id == current_user.id:
-            target.is_active = True
+            new_is_active = True
+
+        if target.role == "admin" and target.is_active and (new_role != "admin" or not new_is_active):
+            if _count_active_admins(db) <= 1:
+                _set_flash(request, "Nao e possivel remover ou desativar o ultimo admin ativo.", "error")
+                return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+
+        target.role = new_role
+        target.is_active = new_is_active
 
         db.commit()
         _set_flash(request, "Usuário atualizado.", "success")
@@ -548,6 +749,11 @@ async def reset_password(
     with _get_db() as db:
         current_user = _require_user(request, db)
         if not current_user or not _is_admin(current_user):
+            return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+        try:
+            await _validate_csrf(request)
+        except ConciliationUserError as exc:
+            _set_flash(request, str(exc), "error")
             return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
         target = db.get(User, user_id)
@@ -572,10 +778,12 @@ def _cleanup_download(token: str) -> None:
 
 @app.get("/download/{token}")
 async def download(request: Request, token: str):
+    _cleanup_expired_downloads()
     with _get_db() as db:
         user = _require_user(request, db)
         if not user:
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        request.session["last_seen_at"] = int(time.time())
 
     item = DOWNLOADS.get(token)
     if not item:

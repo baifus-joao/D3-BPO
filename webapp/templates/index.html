@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel D3 | Conciliação</title>
+    <script>
+        (() => {
+            const savedTheme = localStorage.getItem("d3-theme");
+            const theme = savedTheme === "light" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", theme);
+        })();
+    </script>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -14,13 +21,17 @@
                 <h1 class="app-title">Conciliação de relatórios</h1>
                 <p class="topbar-copy">Ambiente interno para execução operacional e rastreabilidade do financeiro.</p>
             </div>
-            <div class="user-badge">
-                <span class="user-status">Sessão ativa</span>
-                <strong>{{ current_user.name }}</strong>
-                <span>{{ current_user.role }} · {{ current_user.email }}</span>
-                <form action="/logout" method="post">
-                    <button type="submit" class="ghost-button">Sair</button>
-                </form>
+            <div class="topbar-actions">
+                <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Alternar tema">Tema claro</button>
+                <div class="user-badge">
+                    <span class="user-status">Sessão ativa</span>
+                    <strong>{{ current_user.name }}</strong>
+                    <span>{{ current_user.role }} · {{ current_user.email }}</span>
+                    <form action="/logout" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="ghost-button">Sair</button>
+                    </form>
+                </div>
             </div>
         </header>
 
@@ -43,6 +54,7 @@
                 {% endif %}
 
                 <form action="/conciliar" method="post" enctype="multipart/form-data" class="form" id="conciliation-form" novalidate>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <label class="field dropzone">
                         <span>Relatório de vendas</span>
                         <input type="file" name="vendas" accept=".xlsx,.xls" required>
@@ -126,10 +138,17 @@
                     <span>{{ item.executed_at }}</span>
                     <span>{{ item.user_name }}</span>
                     <span>{{ item.arquivo_vendas }} / {{ item.arquivo_recebimentos }}</span>
-                    <span>{{ item.status }}</span>
+                    <span>
+                        <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+                    </span>
                     <span>{{ item.qtde_total_processado }} linhas</span>
                     <span>{{ item.duracao_ms }} ms</span>
                 </div>
+                {% if item.detalhe %}
+                <div class="history-detail history-detail-{{ item.status_class }}">
+                    {{ item.detalhe }}
+                </div>
+                {% endif %}
                 {% endfor %}
             </div>
             {% else %}
@@ -150,6 +169,7 @@
             <section class="admin-block">
                 <h3>Novo usuário</h3>
                 <form action="/admin/users" method="post" class="admin-form admin-form-grid">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input name="name" placeholder="Nome completo" required>
                     <input name="email" type="email" placeholder="E-mail corporativo" required>
                     <select name="role" required>
@@ -166,7 +186,8 @@
                 <div class="user-list">
                     {% for user in users %}
                     <article class="user-card">
-                        <form action="/admin/users/{{ user.id }}/update" method="post" class="admin-form">
+                        <form action="/admin/users/{{ user.id }}/update" method="post" class="admin-form" data-confirm="Salvar alterações do usuário {{ user.name }}?">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <div class="user-card-header">
                                 <strong>{{ user.name }}</strong>
                                 <span class="badge">{{ user.role }}</span>
@@ -183,7 +204,8 @@
                             </label>
                             <button type="submit">Salvar alterações</button>
                         </form>
-                        <form action="/admin/users/{{ user.id }}/reset-password" method="post" class="admin-form reset-form">
+                        <form action="/admin/users/{{ user.id }}/reset-password" method="post" class="admin-form reset-form" data-confirm="Redefinir a senha do usuário {{ user.name }}?">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <input name="new_password" type="password" placeholder="Nova senha" minlength="8" required>
                             <button type="submit" class="secondary-action">Redefinir senha</button>
                         </form>
@@ -217,6 +239,14 @@
         }
 
         fileInputs.forEach((input) => input.addEventListener("change", updateHints));
+        document.querySelectorAll("form[data-confirm]").forEach((formElement) => {
+            formElement.addEventListener("submit", (event) => {
+                const message = formElement.dataset.confirm;
+                if (message && !window.confirm(message)) {
+                    event.preventDefault();
+                }
+            });
+        });
 
         dropzones.forEach((zone) => {
             const input = zone.querySelector('input[type="file"]');
@@ -277,6 +307,20 @@
         });
 
         updateHints();
+
+        const themeToggle = document.getElementById("theme-toggle");
+        function syncThemeLabel() {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+            themeToggle.textContent = currentTheme === "dark" ? "Tema claro" : "Tema escuro";
+        }
+        themeToggle.addEventListener("click", () => {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+            const nextTheme = currentTheme === "dark" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", nextTheme);
+            localStorage.setItem("d3-theme", nextTheme);
+            syncThemeLabel();
+        });
+        syncThemeLabel();
     </script>
 </body>
 </html>

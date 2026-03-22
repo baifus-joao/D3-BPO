@@ -53,9 +53,28 @@ def _raise_file_error(path: Path, label: str, exc: Exception) -> None:
         ) from exc
 
     if "nao foi possivel localizar o cabecalho" in message:
+        if "openai_api_key nao foi configurada" in message:
+            raise ConciliationUserError(
+                f"O arquivo '{path.name}' nao corresponde ao layout conhecido de {label} e o fallback por IA esta desativado. "
+                "Configure a variavel OPENAI_API_KEY e reinicie a aplicacao para testar layouts dinamicos.",
+                file_path=path,
+            ) from exc
         raise ConciliationUserError(
             f"O arquivo '{path.name}' nao corresponde ao layout esperado em {label}. "
             "Verifique se voce exportou o relatorio correto.",
+            file_path=path,
+        ) from exc
+
+    if "falha ao consultar a openai para inferir o layout" in message:
+        if "cota insuficiente" in message or "limite excedido" in message:
+            raise ConciliationUserError(
+                f"O arquivo '{path.name}' nao bate com o layout conhecido de {label} e a tentativa de inferencia por IA falhou por falta de cota na OpenAI. "
+                "Revise o saldo/plano da API ou teste com um layout ja suportado.",
+                file_path=path,
+            ) from exc
+        raise ConciliationUserError(
+            f"O arquivo '{path.name}' nao bate com o layout conhecido de {label} e a tentativa de inferencia por IA falhou. "
+            "Verifique a configuracao da API da OpenAI e tente novamente.",
             file_path=path,
         ) from exc
 

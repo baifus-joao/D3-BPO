@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel D3 | Resultado</title>
+    <script>
+        (() => {
+            const savedTheme = localStorage.getItem("d3-theme");
+            const theme = savedTheme === "light" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", theme);
+        })();
+    </script>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -14,13 +21,17 @@
                 <h1 class="app-title">Resultado da conciliação</h1>
                 <p class="topbar-copy">Processamento concluído. Revise os indicadores e baixe o arquivo final.</p>
             </div>
-            <div class="user-badge">
-                <span class="user-status">Sessão ativa</span>
-                <strong>{{ current_user.name }}</strong>
-                <span>{{ current_user.role }} · {{ current_user.email }}</span>
-                <form action="/logout" method="post">
-                    <button type="submit" class="ghost-button">Sair</button>
-                </form>
+            <div class="topbar-actions">
+                <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Alternar tema">Tema claro</button>
+                <div class="user-badge">
+                    <span class="user-status">Sessão ativa</span>
+                    <strong>{{ current_user.name }}</strong>
+                    <span>{{ current_user.role }} · {{ current_user.email }}</span>
+                    <form action="/logout" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="ghost-button">Sair</button>
+                    </form>
+                </div>
             </div>
         </header>
 
@@ -105,5 +116,20 @@
             </aside>
         </section>
     </main>
+    <script>
+        const themeToggle = document.getElementById("theme-toggle");
+        function syncThemeLabel() {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+            themeToggle.textContent = currentTheme === "dark" ? "Tema claro" : "Tema escuro";
+        }
+        themeToggle.addEventListener("click", () => {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+            const nextTheme = currentTheme === "dark" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", nextTheme);
+            localStorage.setItem("d3-theme", nextTheme);
+            syncThemeLabel();
+        });
+        syncThemeLabel();
+    </script>
 </body>
 </html>

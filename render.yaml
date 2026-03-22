@@ -5,7 +5,7 @@ services:
     plan: starter
     autoDeploy: true
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: python scripts/render_start.py
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
@@ -18,12 +18,25 @@ services:
         value: "true"
       - key: SESSION_SAME_SITE
         value: "lax"
+      - key: SESSION_MAX_AGE_SECONDS
+        value: "28800"
       - key: SESSION_DOMAIN
-        sync: false
+        value: ""
+      - key: LOGIN_MAX_ATTEMPTS
+        value: "5"
+      - key: LOGIN_WINDOW_SECONDS
+        value: "900"
+      - key: LOGIN_LOCK_SECONDS
+        value: "600"
+      - key: DOWNLOAD_TTL_SECONDS
+        value: "3600"
       - key: D3_BOOTSTRAP_ADMIN_NAME
         value: Administrador D3
       - key: D3_BOOTSTRAP_ADMIN_EMAIL
         sync: false
       - key: D3_BOOTSTRAP_ADMIN_PASSWORD
         sync: false
-
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_LAYOUT_MODEL
+        value: gpt-4.1-mini

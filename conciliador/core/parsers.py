@@ -6,10 +6,58 @@ import zipfile
 
 import pandas as pd
 
+from .ai_layout import AILayoutInferenceError, infer_layout_with_ai, is_ai_layout_enabled
+
 
 REPORT_MARKERS = {
     "vendas": ["data prevista de pagamento da venda", "comprovante de venda", "valor bruto da parcela"],
-    "recebimentos": ["data de pagamento", "comprovante da venda", "bruto da parcela"],
+    "recebimentos": ["comprovante da venda", "bruto da parcela", "parcelas"],
+}
+
+CANONICAL_COLUMNS = {
+    "vendas": {
+        "comprovante": "Comprovante de venda",
+        "parcelas": "Parcelas",
+        "data_venda": "Data da venda",
+        "data_prevista_pagamento": "Data prevista de pagamento da venda",
+        "valor_bruto_parcela": "Valor bruto da parcela",
+        "valor_liquido_parcela": "Valor liquido da parcela",
+        "status_venda": "Status",
+        "status_pagamento": "Status do pagamento da venda",
+    },
+    "recebimentos": {
+        "comprovante": "Comprovante da venda",
+        "parcelas": "Parcelas",
+        "data_pagamento": "Data de pagamento",
+        "codigo_pagamento": "Codigo de pagamento",
+        "bruto_parcela": "Bruto da parcela",
+        "liquido_venda": "Liquido da venda",
+        "desconto_mdr": "Desconto MDR",
+        "tipo_pagamento": "Tipo de pagamento",
+    },
+}
+
+COLUMN_ALIASES = {
+    "vendas": {
+        "data_prevista_pagamento": [
+            "Data prevista de pagamento da venda",
+            "Data prevista de pagamento",
+            "Previsao de pagamento",
+        ],
+    },
+    "recebimentos": {
+        "data_pagamento": [
+            "Data de pagamento",
+            "Dia do Pgto",
+            "Dia do Pagto",
+            "Data do Pgto",
+            "Data do Pagamento",
+        ],
+        "codigo_pagamento": [
+            "Codigo de pagamento",
+            "Código de pagamento",
+        ],
+    },
 }
 
 
@@ -89,6 +137,14 @@ def find_column(df, expected_name):
     return None
 
 
+def find_column_by_aliases(df, candidates):
+    for candidate in candidates:
+        found = find_column(df, candidate)
+        if found:
+            return found
+    return None
+
+
 def to_number(series):
     direct = pd.to_numeric(series, errors="coerce")
     text = (
@@ -142,41 +198,79 @@ def detect_report_type(path):
 
     if len(matches) == 1:
         return matches[0]
+    inferred = infer_layout_with_ai(raw, Path(path).name)
+    if inferred:
+        return inferred.report_type
     return None
 
 
-def read_report_with_header(path, required_markers):
+def _build_dataframe_from_header_row(raw, header_idx):
+    header = raw.iloc[header_idx].tolist()
+    seen = {}
+    unique_header = []
+    for value in header:
+        label = str(value).strip()
+        count = seen.get(label, 0) + 1
+        seen[label] = count
+        unique_header.append(label if count == 1 else f"{label} ({count})")
+    data = raw.iloc[header_idx + 1 :].copy()
+    data.columns = unique_header
+    return data.dropna(how="all")
+
+
+def read_report_with_header(path, required_markers, expected_type=None):
     raw = _read_excel_resilient(path, header=None)
     if raw.dropna(how="all").empty:
         raise ValueError(f"Arquivo vazio: {Path(path).name}.")
 
     header_idx = _find_header_index(raw, required_markers)
 
-    if header_idx is None:
-        raise ValueError(f"Nao foi possivel localizar o cabecalho em {Path(path).name}.")
+    if header_idx is not None:
+        return _build_dataframe_from_header_row(raw, header_idx), None
 
-    header = raw.iloc[header_idx].tolist()
-    data = raw.iloc[header_idx + 1 :].copy()
-    data.columns = header
-    data = data.dropna(how="all")
-    return data
+    try:
+        inferred = infer_layout_with_ai(raw, Path(path).name, expected_type=expected_type)
+    except AILayoutInferenceError:
+        raise
+    if inferred:
+        return _build_dataframe_from_header_row(raw, inferred.header_row_index), inferred
+
+    if not is_ai_layout_enabled():
+        raise ValueError(
+            f"Nao foi possivel localizar o cabecalho em {Path(path).name}. "
+            "O fallback de inferencia por IA esta desativado porque OPENAI_API_KEY nao foi configurada."
+        )
+
+    raise ValueError(f"Nao foi possivel localizar o cabecalho em {Path(path).name}.")
+
+
+def _find_mapped_column(df, inferred_layout, report_type, canonical_key):
+    if inferred_layout and canonical_key in inferred_layout.mapped_columns:
+        mapped_name = inferred_layout.mapped_columns[canonical_key]
+        if mapped_name in df.columns:
+            return mapped_name
+
+    expected_names = [CANONICAL_COLUMNS[report_type][canonical_key]]
+    expected_names.extend(COLUMN_ALIASES.get(report_type, {}).get(canonical_key, []))
+    return find_column_by_aliases(df, expected_names)
 
 
 def load_vendas(path_vendas):
-    df = read_report_with_header(
+    df, inferred_layout = read_report_with_header(
         path_vendas,
         required_markers=["data da venda", "comprovante", "parcelas"],
+        expected_type="vendas",
     )
     original = df.copy()
 
-    col_comprovante = find_column(df, "Comprovante de venda")
-    col_parcelas = find_column(df, "Parcelas")
-    col_data_venda = find_column(df, "Data da venda")
-    col_data_prevista = find_column(df, "Data prevista de pagamento da venda")
-    col_valor_parcela = find_column(df, "Valor bruto da parcela")
-    col_valor_liquido = find_column(df, "Valor liquido da parcela")
-    col_status_venda = find_column(df, "Status")
-    col_status_pagamento = find_column(df, "Status do pagamento da venda")
+    col_comprovante = _find_mapped_column(df, inferred_layout, "vendas", "comprovante")
+    col_parcelas = _find_mapped_column(df, inferred_layout, "vendas", "parcelas")
+    col_data_venda = _find_mapped_column(df, inferred_layout, "vendas", "data_venda")
+    col_data_prevista = _find_mapped_column(df, inferred_layout, "vendas", "data_prevista_pagamento")
+    col_valor_parcela = _find_mapped_column(df, inferred_layout, "vendas", "valor_bruto_parcela")
+    col_valor_liquido = _find_mapped_column(df, inferred_layout, "vendas", "valor_liquido_parcela")
+    col_status_venda = _find_mapped_column(df, inferred_layout, "vendas", "status_venda")
+    col_status_pagamento = _find_mapped_column(df, inferred_layout, "vendas", "status_pagamento")
 
     required = [col_comprovante, col_parcelas, col_data_venda, col_valor_parcela]
     if not all(required):
@@ -217,20 +311,21 @@ def load_vendas(path_vendas):
 
 
 def load_recebimentos(path_recebimentos):
-    df = read_report_with_header(
+    df, inferred_layout = read_report_with_header(
         path_recebimentos,
-        required_markers=["data de pagamento", "comprovante", "parcelas"],
+        required_markers=["comprovante", "parcelas", "bruto da parcela"],
+        expected_type="recebimentos",
     )
     original = df.copy()
 
-    col_comprovante = find_column(df, "Comprovante da venda")
-    col_parcelas = find_column(df, "Parcelas")
-    col_data_pagamento = find_column(df, "Data de pagamento")
-    col_codigo_pagamento = find_column(df, "Codigo de pagamento")
-    col_bruto_parcela = find_column(df, "Bruto da parcela")
-    col_liquido = find_column(df, "Liquido da venda")
-    col_desconto = find_column(df, "Desconto MDR")
-    col_tipo_pagamento = find_column(df, "Tipo de pagamento")
+    col_comprovante = _find_mapped_column(df, inferred_layout, "recebimentos", "comprovante")
+    col_parcelas = _find_mapped_column(df, inferred_layout, "recebimentos", "parcelas")
+    col_data_pagamento = _find_mapped_column(df, inferred_layout, "recebimentos", "data_pagamento")
+    col_codigo_pagamento = _find_mapped_column(df, inferred_layout, "recebimentos", "codigo_pagamento")
+    col_bruto_parcela = _find_mapped_column(df, inferred_layout, "recebimentos", "bruto_parcela")
+    col_liquido = _find_mapped_column(df, inferred_layout, "recebimentos", "liquido_venda")
+    col_desconto = _find_mapped_column(df, inferred_layout, "recebimentos", "desconto_mdr")
+    col_tipo_pagamento = _find_mapped_column(df, inferred_layout, "recebimentos", "tipo_pagamento")
 
     required = [col_comprovante, col_parcelas, col_data_pagamento, col_bruto_parcela]
     if not all(required):

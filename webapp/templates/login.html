@@ -4,11 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel D3 | Login</title>
+    <script>
+        (() => {
+            const savedTheme = localStorage.getItem("d3-theme");
+            const theme = savedTheme === "light" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", theme);
+        })();
+    </script>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
     <main class="page auth-shell">
         <section class="auth-card">
+            <div class="auth-toolbar">
+                <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Alternar tema">Tema claro</button>
+            </div>
             <p class="section-kicker">Painel interno D3</p>
             <h1 class="app-title">Entrar no sistema</h1>
             <p class="topbar-copy">Acesso restrito a colaboradores autorizados. Usuários são criados e administrados pelo perfil admin.</p>
@@ -21,6 +31,7 @@
             {% endif %}
 
             <form action="/login" method="post" class="form auth-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <label class="field">
                     <span>E-mail</span>
                     <input type="email" name="email" placeholder="voce@d3solucoes.com" required>
@@ -33,5 +44,20 @@
             </form>
         </section>
     </main>
+    <script>
+        const themeToggle = document.getElementById("theme-toggle");
+        function syncThemeLabel() {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+            themeToggle.textContent = currentTheme === "dark" ? "Tema claro" : "Tema escuro";
+        }
+        themeToggle.addEventListener("click", () => {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+            const nextTheme = currentTheme === "dark" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", nextTheme);
+            localStorage.setItem("d3-theme", nextTheme);
+            syncThemeLabel();
+        });
+        syncThemeLabel();
+    </script>
 </body>
 </html>
