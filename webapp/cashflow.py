@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from sqlalchemy import func, literal, select, union_all
+from sqlalchemy import literal, select, union_all
 from sqlalchemy.orm import Session
 
 from .erp import transaction_query
@@ -131,7 +131,6 @@ def load_cashflow_overview(
         filters,
     )
 
-    total_rows = int(db.scalar(select(func.count()).select_from(apply_cashflow_filters(select(FinancialTransaction.id), filters).subquery())) or 0)
     transactions = db.scalars(table_query.offset((page - 1) * page_size).limit(page_size)).all()
     all_filtered = db.execute(data_query).all()
 
@@ -218,8 +217,6 @@ def load_cashflow_overview(
         },
         "transactions": rows,
         "page": page,
-        "total_rows": total_rows,
-        "total_pages": max(1, (total_rows + page_size - 1) // page_size),
         "line_chart": {"labels": line_labels, "points": build_line_points(line_values)},
         "bar_chart": [
             {**item, "entrada_pct": float((item["entradas"] / max_bar_value) * 100), "saida_pct": float((item["saidas"] / max_bar_value) * 100)}
