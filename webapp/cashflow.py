@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .erp import transaction_query
-from .models import FinancialTransaction
+from .models import FinancialCategory, FinancialTransaction
 
 
 BRAND_DARK = "0E1F26"
@@ -59,16 +59,7 @@ def build_line_points(values: list[Decimal]) -> str:
     return " ".join(points)
 
 
-def load_cashflow_overview(
-    db: Session,
-    *,
-    filters: dict[str, object],
-    format_currency,
-    format_short_date,
-    page: int,
-    page_size: int = 20,
-) -> dict[str, object]:
-    query = transaction_query(db).order_by(FinancialTransaction.transaction_date.desc(), FinancialTransaction.id.desc())
+def apply_cashflow_filters(query, filters: dict[str, object]):
     if filters["date_from"]:
         query = query.where(FinancialTransaction.transaction_date >= filters["date_from"])
     if filters["date_to"]:
@@ -83,21 +74,55 @@ def load_cashflow_overview(
         query = query.where(FinancialTransaction.bank_account_id == filters["account_id"])
     if filters["type"]:
         query = query.where(FinancialTransaction.type == filters["type"])
+    return query
 
-    total_rows = int(db.scalar(select(func.count()).select_from(query.subquery())) or 0)
-    transactions = db.scalars(query.offset((page - 1) * page_size).limit(page_size)).all()
-    all_filtered = db.scalars(query).all()
+
+def load_cashflow_overview(
+    db: Session,
+    *,
+    filters: dict[str, object],
+    format_currency,
+    format_short_date,
+    page: int,
+    page_size: int = 20,
+) -> dict[str, object]:
+    data_query = apply_cashflow_filters(
+        select(
+            FinancialTransaction.transaction_date,
+            FinancialTransaction.type,
+            FinancialTransaction.status,
+            FinancialTransaction.amount,
+            FinancialTransaction.planned_date,
+            FinancialTransaction.realized_date,
+            FinancialCategory.name.label("category_name"),
+        ).outerjoin(FinancialCategory, FinancialCategory.id == FinancialTransaction.category_id),
+        filters,
+    )
+    table_query = apply_cashflow_filters(
+        transaction_query(db).order_by(FinancialTransaction.transaction_date.desc(), FinancialTransaction.id.desc()),
+        filters,
+    )
+
+    total_rows = int(db.scalar(select(func.count()).select_from(apply_cashflow_filters(select(FinancialTransaction.id), filters).subquery())) or 0)
+    transactions = db.scalars(table_query.offset((page - 1) * page_size).limit(page_size)).all()
+    all_filtered = db.execute(data_query).all()
 
     today = date.today()
-    realized_until_today = [item for item in all_filtered if item.status == "realizado" and effective_date(item) <= today]
-    saldo_atual = sum((signed_amount(item) for item in realized_until_today), Decimal("0"))
+    realized_until_today = [
+        item for item in all_filtered if item.status == "realizado" and (item.realized_date or item.planned_date or item.transaction_date) <= today
+    ]
+    saldo_atual = sum(
+        (Decimal(item.amount) if item.type == "ENTRADA" else -Decimal(item.amount) for item in realized_until_today),
+        Decimal("0"),
+    )
     entradas = sum((Decimal(item.amount) for item in all_filtered if item.type == "ENTRADA"), Decimal("0"))
     saidas = sum((Decimal(item.amount) for item in all_filtered if item.type == "SAIDA"), Decimal("0"))
     resultado = entradas - saidas
 
     saldo_por_dia: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
-    for item in sorted(all_filtered, key=effective_date):
-        saldo_por_dia[effective_date(item)] += signed_amount(item)
+    for item in sorted(all_filtered, key=lambda row: row.realized_date or row.planned_date or row.transaction_date):
+        effective = item.realized_date or item.planned_date or item.transaction_date
+        saldo_por_dia[effective] += Decimal(item.amount) if item.type == "ENTRADA" else -Decimal(item.amount)
 
     running = Decimal("0")
     line_values = []
@@ -109,13 +134,14 @@ def load_cashflow_overview(
 
     grouped_period: dict[str, dict[str, Decimal]] = defaultdict(lambda: {"ENTRADA": Decimal("0"), "SAIDA": Decimal("0")})
     for item in all_filtered:
-        grouped_period[effective_date(item).strftime("%d/%m")][item.type] += Decimal(item.amount)
+        effective = item.realized_date or item.planned_date or item.transaction_date
+        grouped_period[effective.strftime("%d/%m")][item.type] += Decimal(item.amount)
     bar_chart = [{"label": label, "entradas": values["ENTRADA"], "saidas": values["SAIDA"]} for label, values in list(grouped_period.items())[-8:]]
     max_bar_value = max([Decimal("1")] + [item["entradas"] for item in bar_chart] + [item["saidas"] for item in bar_chart])
 
     category_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     for item in all_filtered:
-        label = item.category.name if item.category else "Sem categoria"
+        label = item.category_name or "Sem categoria"
         category_totals[label] += Decimal(item.amount)
     category_total_sum = sum(category_totals.values(), Decimal("0")) or Decimal("1")
     colors = ["#22ffc4", "#7aa2ff", "#ffd166", "#ff8a65", "#b48fff", "#4dd0e1"]
@@ -176,22 +202,10 @@ def load_cashflow_overview(
 
 
 def build_cashflow_query(db: Session, *, filters: dict[str, object]):
-    query = transaction_query(db).order_by(FinancialTransaction.transaction_date.desc(), FinancialTransaction.id.desc())
-    if filters["date_from"]:
-        query = query.where(FinancialTransaction.transaction_date >= filters["date_from"])
-    if filters["date_to"]:
-        query = query.where(FinancialTransaction.transaction_date <= filters["date_to"])
-    if filters["category_id"]:
-        query = query.where(FinancialTransaction.category_id == filters["category_id"])
-    if filters["store_id"]:
-        query = query.where(FinancialTransaction.store_id == filters["store_id"])
-    if filters["status"]:
-        query = query.where(FinancialTransaction.status == filters["status"])
-    if filters["account_id"]:
-        query = query.where(FinancialTransaction.bank_account_id == filters["account_id"])
-    if filters["type"]:
-        query = query.where(FinancialTransaction.type == filters["type"])
-    return query
+    return apply_cashflow_filters(
+        transaction_query(db).order_by(FinancialTransaction.transaction_date.desc(), FinancialTransaction.id.desc()),
+        filters,
+    )
 
 
 def export_cashflow_workbook(

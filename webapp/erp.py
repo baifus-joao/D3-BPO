@@ -179,23 +179,20 @@ def permission_flags(user: User) -> dict[str, bool]:
     }
 
 
-def report_catalog(area: str) -> list[dict[str, str]]:
-    if area == "management":
-        return [
-            {"label": "Fluxo de caixa", "status": "Ativo", "description": "Entradas, saidas, saldo e leitura por conta."},
-            {"label": "Cadastros", "status": "Base", "description": "Cobertura para categorias, contas, lojas e formas."},
-            {"label": "Novos modulos", "status": "Em breve", "description": "Espaco para fiscal, compras, metas e novos paineis."},
-        ]
-    return [
-        {"label": "Conciliacao", "status": "Ativo", "description": "Execucoes, falhas, volume e tempo medio."},
-        {"label": "Equipe", "status": "Base", "description": "Produtividade por usuario e historico operacional."},
-        {"label": "Novos modulos", "status": "Em breve", "description": "Espaco para SLA, filas, auditoria e novas rotinas."},
-    ]
-
-
 def load_management_reports(db: Session) -> dict[str, object]:
-    items = db.scalars(
-        transaction_query(db).order_by(FinancialTransaction.transaction_date.desc(), FinancialTransaction.id.desc())
+    items = db.execute(
+        select(
+            FinancialTransaction.transaction_date,
+            FinancialTransaction.type,
+            FinancialTransaction.status,
+            FinancialTransaction.amount,
+            FinancialTransaction.description,
+            FinancialCategory.name.label("category_name"),
+            BankAccount.name.label("account_name"),
+        )
+        .outerjoin(FinancialCategory, FinancialCategory.id == FinancialTransaction.category_id)
+        .outerjoin(BankAccount, BankAccount.id == FinancialTransaction.bank_account_id)
+        .order_by(FinancialTransaction.transaction_date.desc(), FinancialTransaction.id.desc())
     ).all()
 
     entradas_realizadas = sum(
@@ -232,9 +229,9 @@ def load_management_reports(db: Session) -> dict[str, object]:
     recent_rows = []
     for item in items:
         if item.type == "SAIDA":
-            label = item.category.name if item.category else "Sem categoria"
+            label = item.category_name or "Sem categoria"
             category_totals[label] += Decimal(item.amount)
-        account_label = item.bank_account.name if item.bank_account else "Sem conta"
+        account_label = item.account_name or "Sem conta"
         signed = Decimal(item.amount) if item.type == "ENTRADA" else -Decimal(item.amount)
         account_totals[account_label] += signed
 
@@ -243,7 +240,7 @@ def load_management_reports(db: Session) -> dict[str, object]:
             {
                 "date": item.transaction_date.strftime("%d/%m/%Y"),
                 "description": item.description,
-                "category": item.category.name if item.category else "-",
+                "category": item.category_name or "-",
                 "status": item.status,
                 "status_class": "success" if item.status == "realizado" else "warning",
                 "amount": Decimal(item.amount) if item.type == "ENTRADA" else -Decimal(item.amount),
@@ -261,12 +258,6 @@ def load_management_reports(db: Session) -> dict[str, object]:
 
     return {
         "report_type": "management",
-        "report_catalog": report_catalog("management"),
-        "report_sections": [
-            {"label": "Fluxo de caixa", "caption": "Resumo mensal, top categorias e saldo por conta."},
-            {"label": "Movimentacoes", "caption": "Ultimos lancamentos para leitura rapida."},
-            {"label": "Escala", "caption": "Pronto para receber novos blocos por modulo."},
-        ],
         "metrics": [
             {"label": "Entradas realizadas", "value": entradas_realizadas, "tone": "success"},
             {"label": "Saidas realizadas", "value": saidas_realizadas, "tone": "danger"},
@@ -327,12 +318,6 @@ def load_operational_reports(db: Session) -> dict[str, object]:
 
     return {
         "report_type": "operations",
-        "report_catalog": report_catalog("operations"),
-        "report_sections": [
-            {"label": "Conciliacao", "caption": "Execucoes, taxa de sucesso e tempo medio."},
-            {"label": "Equipe", "caption": "Volume por usuario e leitura dos erros."},
-            {"label": "Escala", "caption": "Pronto para SLA, auditoria e novas rotinas."},
-        ],
         "metrics": [
             {"label": "Execucoes", "value": total, "tone": "neutral", "kind": "count"},
             {"label": "Concluidas", "value": success_count, "tone": "success", "kind": "count"},
