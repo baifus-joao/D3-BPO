@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel D3 | Login</title>
+    <title>D3 Hub | Login</title>
     <script>
         (() => {
             const savedTheme = localStorage.getItem("d3-theme");
@@ -19,9 +19,9 @@
             <div class="auth-toolbar">
                 <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Alternar tema">Tema claro</button>
             </div>
-            <p class="section-kicker">Painel interno D3</p>
-            <h1 class="app-title">Entrar no sistema</h1>
-            <p class="topbar-copy">Acesso restrito a colaboradores autorizados. Usuários são criados e administrados pelo perfil admin.</p>
+            <p class="section-kicker">D3 Hub</p>
+            <h1 class="app-title">Entrar no ambiente interno</h1>
+            <p class="topbar-copy">Acesso restrito a colaboradores autorizados. O mesmo login libera acesso à D3 Gestão e à D3 Operações conforme o perfil do usuário.</p>
 
             {% if flash %}
             <div class="flash flash-{{ flash.level }}">{{ flash.message }}</div>

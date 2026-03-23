@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Gestão financeira interna</p>
+            <h2>Movimentações da própria D3</h2>
+        </div>
+    </div>
+    <form action="/gestao/fluxo-caixa" method="get" class="cashflow-filter-grid">
+        <label class="field field-compact">
+            <span>De</span>
+            <input type="date" name="date_from" value="{{ filters.date_from }}">
+        </label>
+        <label class="field field-compact">
+            <span>Até</span>
+            <input type="date" name="date_to" value="{{ filters.date_to }}">
+        </label>
+        <label class="field field-compact">
+            <span>Categoria</span>
+            <select name="category_id">
+                <option value="">Todas</option>
+                {% for item in categories %}<option value="{{ item.id }}" {% if filters.category_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="field field-compact">
+            <span>Loja</span>
+            <select name="store_id">
+                <option value="">Todas</option>
+                {% for item in stores %}<option value="{{ item.id }}" {% if filters.store_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="field field-compact">
+            <span>Conta</span>
+            <select name="account_id">
+                <option value="">Todas</option>
+                {% for item in accounts %}<option value="{{ item.id }}" {% if filters.account_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="field field-compact">
+            <span>Status</span>
+            <select name="status">
+                <option value="">Todos</option>
+                <option value="previsto" {% if filters.status == "previsto" %}selected{% endif %}>Previsto</option>
+                <option value="realizado" {% if filters.status == "realizado" %}selected{% endif %}>Realizado</option>
+            </select>
+        </label>
+        <label class="field field-compact">
+            <span>Tipo</span>
+            <select name="type">
+                <option value="">Todos</option>
+                <option value="ENTRADA" {% if filters.type == "ENTRADA" %}selected{% endif %}>Entrada</option>
+                <option value="SAIDA" {% if filters.type == "SAIDA" %}selected{% endif %}>Saída</option>
+            </select>
+        </label>
+        <div class="cashflow-filter-actions">
+            <button type="submit">Aplicar filtros</button>
+            <a href="{{ export_url }}" class="ghost-button button-link">Exportar planilha</a>
+            <a href="/gestao/fluxo-caixa" class="ghost-button button-link">Limpar</a>
+        </div>
+    </form>
+</section>
+
+<section class="grid four-col cashflow-kpi-grid">
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">Saldo atual</span>
+        <strong>{{ summary.saldo_atual|currency }}</strong>
+    </article>
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">Entradas</span>
+        <strong>{{ summary.entradas_periodo|currency }}</strong>
+    </article>
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">Saídas</span>
+        <strong>{{ summary.saidas_periodo|currency }}</strong>
+    </article>
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">Resultado</span>
+        <strong>{{ summary.resultado_periodo|currency }}</strong>
+    </article>
+</section>
+
+<section class="grid charts-grid">
+    <div class="card">
+        <p class="section-kicker">Evolução do saldo</p>
+        <svg viewBox="0 0 320 120" class="line-chart">
+            <polyline points="{{ line_chart.points }}" fill="none" stroke="var(--accent)" stroke-width="3"></polyline>
+        </svg>
+    </div>
+    <div class="card">
+        <p class="section-kicker">Entradas vs saídas</p>
+        <div class="bar-stack">
+            {% for item in bar_chart %}
+            <div class="bar-row">
+                <span>{{ item.label }}</span>
+                <div class="bar-track"><div class="bar in" style="width: {{ item.entrada_pct }}%"></div></div>
+                <div class="bar-track"><div class="bar out" style="width: {{ item.saida_pct }}%"></div></div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="card">
+        <p class="section-kicker">Categorias</p>
+        <div class="donut-shell">
+            <svg viewBox="0 0 140 140" class="donut-chart">
+                <circle cx="70" cy="70" r="50" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="16"></circle>
+                {% for item in donut_chart %}
+                <circle cx="70" cy="70" r="50" fill="none" stroke="{{ item.color }}" stroke-width="16" stroke-dasharray="{{ item.dasharray }}" stroke-dashoffset="{{ item.dashoffset }}" transform="rotate(-90 70 70)"></circle>
+                {% endfor %}
+            </svg>
+            <div class="legend-stack">
+                {% for item in donut_chart %}
+                <div class="legend-item"><span class="legend-dot" style="background: {{ item.color }}"></span>{{ item.label }} · {{ item.value }}</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+
+{% if permissions.can_edit %}
+<section class="card quick-entry-card" id="quick-entry">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Novo lançamento</p>
+            <h2>Lançamento rápido</h2>
+        </div>
+        <div class="quick-entry-hints">
+            <span class="status-badge status-neutral">E = Entrada</span>
+            <span class="status-badge status-neutral">S = Saída</span>
+            <span class="status-badge status-neutral">Enter = Salvar</span>
+        </div>
+    </div>
+
+    <form action="/fluxo-caixa/lancamentos" method="post" class="quick-entry-form" id="quick-entry-form" data-today="{{ today }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <section class="entry-block">
+            <div class="entry-block-header">
+                <p class="section-kicker">Contexto</p>
+            </div>
+            <div class="entry-row entry-row-top">
+                <div class="field field-type-toggle">
+                    <span>Tipo</span>
+                    <div class="segmented-control" id="type-segmented">
+                        <button type="button" class="segment-button is-active" data-type-value="ENTRADA">Entrada</button>
+                        <button type="button" class="segment-button is-danger" data-type-value="SAIDA">Saída</button>
+                    </div>
+                    <input type="hidden" name="type" id="entry-type" value="ENTRADA">
+                </div>
+
+                <label class="field">
+                    <span>Loja</span>
+                    <select name="store_id" id="entry-store">
+                        <option value="">Loja</option>
+                        {% for item in stores %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span>Data</span>
+                    <input type="date" name="transaction_date" id="entry-date" value="{{ today }}" required>
+                </label>
+
+                <div class="field field-status-toggle">
+                    <span>Status</span>
+                    <div class="segmented-control" id="status-segmented">
+                        <button type="button" class="segment-button is-active" data-status-value="previsto">Previsto</button>
+                        <button type="button" class="segment-button" data-status-value="realizado">Realizado</button>
+                    </div>
+                    <input type="hidden" name="status" id="entry-status" value="previsto">
+                </div>
+
+                <label class="field field-value field-value-primary">
+                    <span>Valor</span>
+                    <input type="text" name="amount" id="entry-amount" inputmode="decimal" autocomplete="off" placeholder="R$ 0,00" required>
+                </label>
+
+                <button type="submit" class="quick-entry-submit">Salvar <span>(Enter)</span></button>
+            </div>
+        </section>
+
+        <section class="entry-block">
+            <div class="entry-block-header">
+                <p class="section-kicker">Detalhes</p>
+            </div>
+            <div class="entry-row entry-row-bottom">
+                <label class="field">
+                    <span>Categoria</span>
+                    <select name="category_id" id="entry-category" data-category-map='{{ subcategory_map|tojson }}'>
+                        <option value="">Categoria</option>
+                        {% for item in categories %}<option value="{{ item.id }}" data-category-name="{{ item.name }}">{{ item.name }}</option>{% endfor %}
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span>Subcategoria</span>
+                    <input type="text" name="subcategory" id="entry-subcategory" placeholder="Subcategoria" list="subcategory-suggestions" disabled>
+                </label>
+
+                <label class="field">
+                    <span>Forma</span>
+                    <select name="payment_method_id" id="entry-payment-method">
+                        <option value="">Forma</option>
+                        {% for item in payment_methods %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span>Conta</span>
+                    <select name="bank_account_id" id="entry-account">
+                        <option value="">Conta</option>
+                        {% for item in accounts %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+                    </select>
+                </label>
+
+                <label class="field field-description">
+                    <span>Descrição</span>
+                    <input type="text" name="description" id="entry-description" placeholder="Descrição opcional" list="description-suggestions">
+                </label>
+            </div>
+        </section>
+    </form>
+
+    <datalist id="subcategory-suggestions"></datalist>
+    <datalist id="description-suggestions">
+        {% for item in description_suggestions %}
+        <option value="{{ item.description }}"></option>
+        {% endfor %}
+    </datalist>
+
+    <script>
+        (() => {
+            const form = document.getElementById("quick-entry-form");
+            if (!form) return;
+
+            const amountInput = document.getElementById("entry-amount");
+            const typeInput = document.getElementById("entry-type");
+            const statusInput = document.getElementById("entry-status");
+            const dateInput = document.getElementById("entry-date");
+            const storeInput = document.getElementById("entry-store");
+            const paymentInput = document.getElementById("entry-payment-method");
+            const accountInput = document.getElementById("entry-account");
+            const categoryInput = document.getElementById("entry-category");
+            const subcategoryInput = document.getElementById("entry-subcategory");
+            const descriptionInput = document.getElementById("entry-description");
+            const subcategoryList = document.getElementById("subcategory-suggestions");
+            const typeButtons = document.querySelectorAll("[data-type-value]");
+            const statusButtons = document.querySelectorAll("[data-status-value]");
+            const categoryMap = JSON.parse(categoryInput.dataset.categoryMap || "{}");
+            const descriptionSuggestions = {{ description_suggestions|tojson }};
+            const today = form.dataset.today;
+
+            const storageKeys = {
+                store: "d3-cashflow-last-store",
+                payment: "d3-cashflow-last-payment",
+                account: "d3-cashflow-last-account",
+                status: "d3-cashflow-last-status",
+                type: "d3-cashflow-last-type",
+            };
+
+            const formatCurrency = (digits) => {
+                const normalized = (digits || "").replace(/\D/g, "");
+                const value = Number(normalized || "0") / 100;
+                return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+            };
+
+            const applyTypeVisual = (value) => {
+                form.dataset.entryType = value;
+                typeInput.value = value;
+                typeButtons.forEach((button) => {
+                    button.classList.toggle("is-active", button.dataset.typeValue === value);
+                });
+            };
+
+            const applyStatusVisual = (value) => {
+                statusInput.value = value;
+                statusButtons.forEach((button) => {
+                    button.classList.toggle("is-active", button.dataset.statusValue === value);
+                });
+            };
+
+            const updateSubcategoryOptions = () => {
+                const selected = categoryInput.options[categoryInput.selectedIndex];
+                const categoryName = selected ? selected.dataset.categoryName || "" : "";
+                const options = categoryMap[categoryName] || [];
+                subcategoryInput.disabled = !categoryName;
+                subcategoryList.innerHTML = "";
+                options.forEach((item) => {
+                    const option = document.createElement("option");
+                    option.value = item;
+                    subcategoryList.appendChild(option);
+                });
+                if (!categoryName) {
+                    subcategoryInput.value = "";
+                }
+            };
+
+            const normalizeDescription = (value) => value.trim().toLowerCase();
+
+            const applyDescriptionSuggestion = () => {
+                const current = normalizeDescription(descriptionInput.value);
+                if (!current) return;
+                const suggestion = descriptionSuggestions.find((item) => normalizeDescription(item.description) === current);
+                if (!suggestion) return;
+                if (suggestion.category_id) {
+                    categoryInput.value = String(suggestion.category_id);
+                    updateSubcategoryOptions();
+                }
+                if (suggestion.subcategory) {
+                    subcategoryInput.value = suggestion.subcategory;
+                }
+            };
+
+            const restoreDefaults = () => {
+                dateInput.value = today;
+                storeInput.value = localStorage.getItem(storageKeys.store) || storeInput.value;
+                paymentInput.value = localStorage.getItem(storageKeys.payment) || paymentInput.value;
+                accountInput.value = localStorage.getItem(storageKeys.account) || accountInput.value;
+                applyTypeVisual(localStorage.getItem(storageKeys.type) || "ENTRADA");
+                applyStatusVisual(localStorage.getItem(storageKeys.status) || "previsto");
+                categoryInput.value = "";
+                updateSubcategoryOptions();
+                subcategoryInput.value = "";
+                descriptionInput.value = "";
+                amountInput.value = "";
+                window.requestAnimationFrame(() => amountInput.focus());
+            };
+
+            amountInput.addEventListener("input", () => {
+                const digits = amountInput.value.replace(/\D/g, "");
+                amountInput.value = digits ? formatCurrency(digits) : "";
+            });
+
+            typeButtons.forEach((button) => {
+                button.addEventListener("click", () => applyTypeVisual(button.dataset.typeValue));
+            });
+
+            statusButtons.forEach((button) => {
+                button.addEventListener("click", () => applyStatusVisual(button.dataset.statusValue));
+            });
+
+            categoryInput.addEventListener("change", updateSubcategoryOptions);
+            descriptionInput.addEventListener("change", applyDescriptionSuggestion);
+            descriptionInput.addEventListener("blur", applyDescriptionSuggestion);
+
+            [storeInput, paymentInput, accountInput].forEach((input) => {
+                input.addEventListener("change", () => {
+                    const key = input === storeInput ? storageKeys.store : input === paymentInput ? storageKeys.payment : storageKeys.account;
+                    localStorage.setItem(key, input.value);
+                });
+            });
+
+            form.addEventListener("submit", () => {
+                localStorage.setItem(storageKeys.store, storeInput.value);
+                localStorage.setItem(storageKeys.payment, paymentInput.value);
+                localStorage.setItem(storageKeys.account, accountInput.value);
+                localStorage.setItem(storageKeys.type, typeInput.value);
+                localStorage.setItem(storageKeys.status, statusInput.value);
+            });
+
+            document.addEventListener("keydown", (event) => {
+                const target = event.target;
+                const tagName = target && target.tagName ? target.tagName.toLowerCase() : "";
+                const typingField = tagName === "input" || tagName === "textarea";
+                if (!typingField && event.key.toLowerCase() === "e") {
+                    applyTypeVisual("ENTRADA");
+                }
+                if (!typingField && event.key.toLowerCase() === "s") {
+                    applyTypeVisual("SAIDA");
+                }
+            });
+
+            restoreDefaults();
+        })();
+    </script>
+</section>
+{% endif %}
+
+<section class="card">
+    <div class="card-header"><div><p class="section-kicker">Tabela detalhada</p><h2>Movimentações financeiras</h2></div></div>
+    <div class="table-shell">
+        {% for item in transactions %}
+        <div class="table-row">
+            <span>{{ item.date }}</span>
+            <span>{{ item.type }}</span>
+            <span>{{ item.description }}</span>
+            <span>{{ item.category }}</span>
+            <span>{{ item.amount }}</span>
+            <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+            <span>{{ item.account }}</span>
+            <span>{{ item.store }}</span>
+            {% if permissions.can_edit and item.editable %}
+            <form action="/fluxo-caixa/lancamentos/{{ item.id }}/excluir" method="post" data-confirm="Excluir este lançamento?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="secondary-action">Excluir</button>
+            </form>
+            {% else %}
+            <span>{{ item.source }}</span>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

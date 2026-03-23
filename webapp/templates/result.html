@@ -1,135 +1,31 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel D3 | Resultado</title>
-    <script>
-        (() => {
-            const savedTheme = localStorage.getItem("d3-theme");
-            const theme = savedTheme === "light" ? "light" : "dark";
-            document.documentElement.setAttribute("data-theme", theme);
-        })();
-    </script>
-    <link rel="stylesheet" href="/static/styles.css">
-</head>
-<body>
-    <main class="page app-shell">
-        <header class="topbar">
+{% extends "base.html" %}
+{% block content %}
+<section class="grid two-col">
+    <div class="card">
+        <div class="card-header">
             <div>
-                <p class="section-kicker">Painel interno D3</p>
-                <h1 class="app-title">Resultado da conciliação</h1>
-                <p class="topbar-copy">Processamento concluído. Revise os indicadores e baixe o arquivo final.</p>
+                <p class="section-kicker">Execução concluída</p>
+                <h2>Resumo do lote</h2>
             </div>
-            <div class="topbar-actions">
-                <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Alternar tema">Tema claro</button>
-                <div class="user-badge">
-                    <span class="user-status">Sessão ativa</span>
-                    <strong>{{ current_user.name }}</strong>
-                    <span>{{ current_user.role }} · {{ current_user.email }}</span>
-                    <form action="/logout" method="post">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                        <button type="submit" class="ghost-button">Sair</button>
-                    </form>
-                </div>
-            </div>
-        </header>
-
-        <section class="dashboard-grid result-layout">
-            <section class="card result-card">
-                <div class="card-header">
-                    <div>
-                        <p class="section-kicker">Execução concluída</p>
-                        <h2>Resumo do lote processado</h2>
-                    </div>
-                    <p class="section-copy">Indicadores principais do processamento para conferência rápida.</p>
-                </div>
-
-                <div class="metrics">
-                    <article class="metric metric-strong">
-                        <span class="metric-label">Total de linhas processadas</span>
-                        <strong>{{ summary.qtde_total_processado }}</strong>
-                    </article>
-                    <article class="metric">
-                        <span class="metric-label">Arquivo final</span>
-                        <strong>{{ summary.arquivo_saida }}</strong>
-                    </article>
-                    <article class="metric">
-                        <span class="metric-label">Linhas no relatório de vendas</span>
-                        <strong>{{ summary.qtde_linhas_vendas }}</strong>
-                    </article>
-                    <article class="metric">
-                        <span class="metric-label">Linhas no relatório de recebimentos</span>
-                        <strong>{{ summary.qtde_linhas_recebimentos }}</strong>
-                    </article>
-                    <article class="metric">
-                        <span class="metric-label">Dias com recebimento</span>
-                        <strong>{{ summary.qtde_recebido_por_dia }}</strong>
-                    </article>
-                    <article class="metric">
-                        <span class="metric-label">Datas previstas</span>
-                        <strong>{{ summary.qtde_previsao }}</strong>
-                    </article>
-                    <article class="metric">
-                        <span class="metric-label">Vendas pagas sem recebimento</span>
-                        <strong>{{ summary.qtde_vendas_pagas_sem_recebimento }}</strong>
-                    </article>
-                    <article class="metric">
-                        <span class="metric-label">Tempo de processamento</span>
-                        <strong>{{ summary.duracao_ms }} ms</strong>
-                    </article>
-                </div>
-
-                <div class="actions">
-                    <a class="button-link" href="/download/{{ download_token }}">Baixar Excel conciliado</a>
-                    <a class="secondary-link" href="/">Voltar ao painel</a>
-                </div>
-            </section>
-
-            <aside class="sidebar-stack">
-                <section class="card compact-card">
-                    <p class="section-kicker">Arquivos utilizados</p>
-                    <div class="stats-grid">
-                        <article class="stat">
-                            <span class="metric-label">Vendas</span>
-                            <strong>{{ summary.arquivo_vendas }}</strong>
-                        </article>
-                        <article class="stat">
-                            <span class="metric-label">Recebimentos</span>
-                            <strong>{{ summary.arquivo_recebimentos }}</strong>
-                        </article>
-                    </div>
-                </section>
-
-                <section class="card compact-card">
-                    <p class="section-kicker">Últimas execuções</p>
-                    {% if history %}
-                    <ul class="plain-list compact-list">
-                        {% for item in history %}
-                        <li>{{ item.executed_at }} · {{ item.user_name }} · {{ item.qtde_total_processado }} linhas</li>
-                        {% endfor %}
-                    </ul>
-                    {% else %}
-                    <p class="empty-state">Nenhum histórico disponível.</p>
-                    {% endif %}
-                </section>
-            </aside>
+        </div>
+        <section class="grid four-col compact-grid">
+            <article class="metric-card"><span class="metric-label">Total processado</span><strong>{{ summary.qtde_total_processado }}</strong></article>
+            <article class="metric-card"><span class="metric-label">Linhas vendas</span><strong>{{ summary.qtde_linhas_vendas }}</strong></article>
+            <article class="metric-card"><span class="metric-label">Linhas recebimentos</span><strong>{{ summary.qtde_linhas_recebimentos }}</strong></article>
+            <article class="metric-card"><span class="metric-label">Arquivo final</span><strong>{{ summary.arquivo_saida }}</strong></article>
         </section>
-    </main>
-    <script>
-        const themeToggle = document.getElementById("theme-toggle");
-        function syncThemeLabel() {
-            const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
-            themeToggle.textContent = currentTheme === "dark" ? "Tema claro" : "Tema escuro";
-        }
-        themeToggle.addEventListener("click", () => {
-            const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
-            const nextTheme = currentTheme === "dark" ? "light" : "dark";
-            document.documentElement.setAttribute("data-theme", nextTheme);
-            localStorage.setItem("d3-theme", nextTheme);
-            syncThemeLabel();
-        });
-        syncThemeLabel();
-    </script>
-</body>
-</html>
+        <div class="actions">
+            <a class="button-link" href="/download/{{ download_token }}">Baixar Excel conciliado</a>
+            <a class="secondary-link" href="/operacoes/conciliacao">Voltar à conciliação</a>
+        </div>
+    </div>
+    <div class="card">
+        <p class="section-kicker">Últimas execuções</p>
+        <div class="list-stack">
+            {% for item in history %}
+            <div class="list-item"><strong>{{ item.executed_at }}</strong><span>{{ item.user_name }} · {{ item.qtde_total_processado }} linhas</span></div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endblock %}

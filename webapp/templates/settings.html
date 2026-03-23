@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid two-col">
+    <div class="card">
+        <div class="card-header"><div><p class="section-kicker">Meu perfil</p><h2>Configurações do usuário</h2></div></div>
+        <form action="/configuracoes/usuario" method="post" class="form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="field"><span>Nome</span><input name="name" value="{{ current_user.name }}" required></label>
+            <label class="field"><span>Email</span><input name="email" type="email" value="{{ current_user.email }}" required></label>
+            <label class="field"><span>Senha atual</span><input name="current_password" type="password"></label>
+            <label class="field"><span>Nova senha</span><input name="new_password" type="password"></label>
+            <button type="submit">Salvar perfil</button>
+        </form>
+    </div>
+    <div class="card">
+        <p class="section-kicker">Permissões</p>
+        <div class="list-stack">
+            {% for permission in current_user.permissions %}
+            <div class="list-item"><strong>{{ permission }}</strong><span>{{ current_user.role_label }}</span></div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Rastreabilidade</p>
+            <h2>Histórico de execuções</h2>
+        </div>
+    </div>
+    {% if history %}
+    <div class="table-shell">
+        {% for item in history %}
+        <div class="table-row">
+            <span>{{ item.executed_at }}</span>
+            <span>{{ item.user_name }}</span>
+            <span>{{ item.arquivo_vendas }} / {{ item.arquivo_recebimentos }}</span>
+            <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+        </div>
+        {% if item.detalhe %}
+        <div class="table-detail {{ item.status_class }}">{{ item.detalhe }}</div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-state">Nenhuma execução registrada.</p>
+    {% endif %}
+</section>
+
+{% if permissions.is_admin %}
+<section class="card">
+    <div class="card-header"><div><p class="section-kicker">Administração</p><h2>Usuários do sistema</h2></div></div>
+    <form action="/admin/users" method="post" class="toolbar-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input name="name" placeholder="Nome completo" required>
+        <input name="email" type="email" placeholder="E-mail" required>
+        <select name="role"><option value="operacional">Operacional</option><option value="visualizador">Visualizador</option><option value="admin">Admin</option></select>
+        <input name="password" type="password" placeholder="Senha inicial" required>
+        <button type="submit">Criar usuário</button>
+    </form>
+    <div class="table-shell">
+        {% for user in users %}
+        <div class="user-admin-row">
+            <form action="/admin/users/{{ user.id }}/update" method="post" class="toolbar-grid" data-confirm="Salvar alterações do usuário {{ user.name }}?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input name="name" value="{{ user.name }}" required>
+                <input name="email" type="email" value="{{ user.email }}" required>
+                <select name="role"><option value="operacional" {% if user.role == "operacional" %}selected{% endif %}>Operacional</option><option value="visualizador" {% if user.role == "visualizador" %}selected{% endif %}>Visualizador</option><option value="admin" {% if user.role == "admin" %}selected{% endif %}>Admin</option></select>
+                <label class="toggle"><input type="checkbox" name="is_active" {% if user.is_active %}checked{% endif %}><span>Ativo</span></label>
+                <button type="submit">Salvar</button>
+            </form>
+            <form action="/admin/users/{{ user.id }}/reset-password" method="post" class="toolbar-grid" data-confirm="Redefinir a senha do usuário {{ user.name }}?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input name="new_password" type="password" placeholder="Nova senha" required>
+                <button type="submit" class="secondary-action">Redefinir senha</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid two-col">
+    <section class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Nova execução</p>
+                <h2>Processar conciliação</h2>
+            </div>
+        </div>
+        {% if error %}
+        <div class="alert">{{ error }}</div>
+        {% endif %}
+        {% if permissions.can_upload %}
+        <form action="/conciliar" method="post" enctype="multipart/form-data" class="form" id="conciliation-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="field">
+                <span>Relatório de vendas</span>
+                <input type="file" name="vendas" accept=".xlsx,.xls" required>
+                <small>{{ submitted_names.get("vendas", "Nenhum arquivo selecionado.") }}</small>
+            </label>
+            <label class="field">
+                <span>Relatório de recebimentos</span>
+                <input type="file" name="recebimentos" accept=".xlsx,.xls" required>
+                <small>{{ submitted_names.get("recebimentos", "Nenhum arquivo selecionado.") }}</small>
+            </label>
+            <div class="inline-notes">
+                <p class="limit-note">Limite: 15 MB por arquivo.</p>
+                <p class="limit-note">Formatos: `.xlsx` e `.xls`.</p>
+            </div>
+            <button type="submit">Gerar conciliação</button>
+        </form>
+        {% else %}
+        <p class="empty-state">Seu perfil possui acesso somente leitura.</p>
+        {% endif %}
+    </section>
+    <aside class="card">
+        <p class="section-kicker">Checklist operacional</p>
+        <ul class="plain-list">
+            <li>Use relatórios do mesmo cliente e do mesmo período.</li>
+            <li>Prefira exportações originais, sem edição manual.</li>
+            <li>Baixe o consolidado e registre a execução do atendimento.</li>
+        </ul>
+    </aside>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Rastreabilidade</p>
+            <h2>Histórico de conciliações</h2>
+        </div>
+    </div>
+    {% if history %}
+    <div class="table-shell">
+        {% for item in history %}
+        <div class="table-row">
+            <span>{{ item.executed_at }}</span>
+            <span>{{ item.user_name }}</span>
+            <span>{{ item.arquivo_vendas }} / {{ item.arquivo_recebimentos }}</span>
+            <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+        </div>
+        {% if item.detalhe %}
+        <div class="table-detail {{ item.status_class }}">{{ item.detalhe }}</div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-state">Nenhuma execução registrada ainda.</p>
+    {% endif %}
+</section>
+{% endblock %}

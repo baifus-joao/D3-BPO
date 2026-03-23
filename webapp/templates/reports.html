@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid three-col">
+    <article class="card">
+        <p class="section-kicker">{{ reports_context.kicker_one }}</p>
+        <h2>{{ reports_context.title_one }}</h2>
+        <p>{{ reports_context.text_one }}</p>
+    </article>
+    <article class="card">
+        <p class="section-kicker">{{ reports_context.kicker_two }}</p>
+        <h2>{{ reports_context.title_two }}</h2>
+        <p>{{ reports_context.text_two }}</p>
+    </article>
+    <article class="card">
+        <p class="section-kicker">{{ reports_context.kicker_three }}</p>
+        <h2>{{ reports_context.title_three }}</h2>
+        <p>{{ reports_context.text_three }}</p>
+    </article>
+</section>
+<section class="card">
+    <p class="section-kicker">Últimas execuções</p>
+    <div class="table-shell">
+        {% for item in history %}
+        <div class="table-row">
+            <span>{{ item.executed_at }}</span>
+            <span>{{ item.user_name }}</span>
+            <span>{{ item.arquivo_vendas }}</span>
+            <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}
