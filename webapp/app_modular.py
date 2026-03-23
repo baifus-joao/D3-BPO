@@ -27,7 +27,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from conciliador.core.ai_layout import is_ai_layout_enabled
 from conciliador.service import ConciliationUserError, run_conciliation
 
-from .cashflow import build_cashflow_form_state, export_cashflow_workbook, load_cashflow_overview, parse_date_input, safe_decimal
+from .cashflow import build_cashflow_form_state, export_cashflow_workbook, load_cashflow_overview, load_cashflow_reference_lists, parse_date_input, safe_decimal
 from .db import Base, DATABASE_URL, SessionLocal, engine
 from .erp import (
     CONTEXTS,
@@ -487,7 +487,7 @@ async def cashflow_page(request: Request, date_from: str | None = Query(default=
         normalized_category_id = _parse_optional_int(category_id)
         normalized_store_id = _parse_optional_int(store_id)
         normalized_account_id = _parse_optional_int(account_id)
-        refs = load_reference_lists(db)
+        refs = load_cashflow_reference_lists(db)
         overview = load_cashflow_overview(db, filters={"date_from": parse_date_input(date_from), "date_to": parse_date_input(date_to), "category_id": normalized_category_id, "store_id": normalized_store_id, "status": status_value, "account_id": normalized_account_id, "type": movement_type}, format_currency=format_currency, format_short_date=format_short_date, page=page)
         form_state = build_cashflow_form_state(db)
         export_query = _build_query_string({"date_from": date_from or "", "date_to": date_to or "", "category_id": normalized_category_id, "store_id": normalized_store_id, "account_id": normalized_account_id, "status": status_value or "", "type": movement_type or ""})

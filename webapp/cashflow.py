@@ -4,15 +4,17 @@ from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
+from time import time
+from types import SimpleNamespace
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.orm import Session
 
 from .erp import transaction_query
-from .models import FinancialCategory, FinancialTransaction
+from .models import BankAccount, FinancialCategory, FinancialTransaction, PaymentMethod, Store
 
 
 BRAND_DARK = "0E1F26"
@@ -22,6 +24,10 @@ BRAND_TEXT_LIGHT = "ECF6F4"
 BRAND_TEXT_DARK = "102821"
 BRAND_MUTED = "8FA8A1"
 BRAND_BORDER = "31444C"
+REFERENCE_CACHE_TTL_SECONDS = 60
+FORM_STATE_CACHE_TTL_SECONDS = 30
+_cashflow_reference_cache: dict[str, object] = {"expires_at": 0.0, "value": None}
+_cashflow_form_state_cache: dict[str, object] = {"expires_at": 0.0, "value": None}
 
 
 def parse_date_input(value: str | None) -> date | None:
@@ -57,6 +63,28 @@ def build_line_points(values: list[Decimal]) -> str:
         y = 110 - (ratio * 90)
         points.append(f"{x:.2f},{y:.2f}")
     return " ".join(points)
+
+
+def load_cashflow_reference_lists(db: Session) -> dict[str, list[object]]:
+    now = time()
+    if _cashflow_reference_cache["value"] is not None and float(_cashflow_reference_cache["expires_at"]) > now:
+        return _cashflow_reference_cache["value"]  # type: ignore[return-value]
+
+    references = union_all(
+        select(literal("stores").label("kind"), Store.id.label("id"), Store.name.label("name")).where(Store.is_active.is_(True)),
+        select(literal("accounts").label("kind"), BankAccount.id.label("id"), BankAccount.name.label("name")).where(BankAccount.is_active.is_(True)),
+        select(literal("categories").label("kind"), FinancialCategory.id.label("id"), FinancialCategory.name.label("name")).where(FinancialCategory.is_active.is_(True)),
+        select(literal("payment_methods").label("kind"), PaymentMethod.id.label("id"), PaymentMethod.name.label("name")).where(PaymentMethod.is_active.is_(True)),
+    ).subquery()
+
+    rows = db.execute(select(references.c.kind, references.c.id, references.c.name).order_by(references.c.kind, references.c.name)).all()
+    data = {"stores": [], "accounts": [], "categories": [], "payment_methods": []}
+    for row in rows:
+        data[row.kind].append(SimpleNamespace(id=row.id, name=row.name))
+
+    _cashflow_reference_cache["expires_at"] = now + REFERENCE_CACHE_TTL_SECONDS
+    _cashflow_reference_cache["value"] = data
+    return data
 
 
 def apply_cashflow_filters(query, filters: dict[str, object]):
@@ -382,8 +410,18 @@ def export_cashflow_workbook(
 
 
 def build_cashflow_form_state(db: Session) -> dict[str, object]:
-    recent_transactions = db.scalars(
-        transaction_query(db)
+    now = time()
+    if _cashflow_form_state_cache["value"] is not None and float(_cashflow_form_state_cache["expires_at"]) > now:
+        return _cashflow_form_state_cache["value"]  # type: ignore[return-value]
+
+    recent_transactions = db.execute(
+        select(
+            FinancialTransaction.description,
+            FinancialTransaction.category_id,
+            FinancialTransaction.subcategory,
+            FinancialCategory.name.label("category_name"),
+        )
+        .outerjoin(FinancialCategory, FinancialCategory.id == FinancialTransaction.category_id)
         .where(FinancialTransaction.source == "manual")
         .order_by(FinancialTransaction.created_at.desc(), FinancialTransaction.id.desc())
         .limit(200)
@@ -395,7 +433,7 @@ def build_cashflow_form_state(db: Session) -> dict[str, object]:
 
     ranked_descriptions: dict[tuple[str, int | None, str], dict[str, object]] = {}
     for item in recent_transactions:
-        category_name = item.category.name if item.category else ""
+        category_name = item.category_name or ""
         if category_name and item.subcategory and item.subcategory not in subcategories_by_category[category_name]:
             subcategories_by_category[category_name].append(item.subcategory)
 
@@ -427,8 +465,11 @@ def build_cashflow_form_state(db: Session) -> dict[str, object]:
         if len(description_suggestions) >= 12:
             break
 
-    return {
+    value = {
         "today": date.today().strftime("%Y-%m-%d"),
         "subcategory_map": dict(subcategories_by_category),
         "description_suggestions": description_suggestions,
     }
+    _cashflow_form_state_cache["expires_at"] = now + FORM_STATE_CACHE_TTL_SECONDS
+    _cashflow_form_state_cache["value"] = value
+    return value
