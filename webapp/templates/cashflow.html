@@ -3,17 +3,17 @@
 <section class="card">
     <div class="card-header">
         <div>
-            <p class="section-kicker">Gestão financeira interna</p>
-            <h2>Movimentações da própria D3</h2>
+            <p class="section-kicker">Financeiro</p>
+            <h2>Fluxo de caixa</h2>
         </div>
     </div>
-    <form action="/gestao/fluxo-caixa" method="get" class="cashflow-filter-grid">
+    <form action="/gestao/fluxo-caixa" method="get" class="cashflow-filter-grid" data-loading-form="true" data-loading-text="Aplicando filtros...">
         <label class="field field-compact">
             <span>De</span>
             <input type="date" name="date_from" value="{{ filters.date_from }}">
         </label>
         <label class="field field-compact">
-            <span>Até</span>
+            <span>Ate</span>
             <input type="date" name="date_to" value="{{ filters.date_to }}">
         </label>
         <label class="field field-compact">
@@ -50,20 +50,20 @@
             <select name="type">
                 <option value="">Todos</option>
                 <option value="ENTRADA" {% if filters.type == "ENTRADA" %}selected{% endif %}>Entrada</option>
-                <option value="SAIDA" {% if filters.type == "SAIDA" %}selected{% endif %}>Saída</option>
+                <option value="SAIDA" {% if filters.type == "SAIDA" %}selected{% endif %}>Saida</option>
             </select>
         </label>
         <div class="cashflow-filter-actions">
-            <button type="submit">Aplicar filtros</button>
-            <a href="{{ export_url }}" class="ghost-button button-link">Exportar planilha</a>
-            <a href="/gestao/fluxo-caixa" class="ghost-button button-link">Limpar</a>
+            <button type="submit">Filtrar</button>
+            <a href="{{ export_url }}" class="ghost-button button-link" data-loading-link="true" data-loading-text="Gerando planilha...">Exportar</a>
+            <a href="/gestao/fluxo-caixa" class="ghost-button button-link" data-loading-link="true">Limpar</a>
         </div>
     </form>
 </section>
 
 <section class="grid four-col cashflow-kpi-grid">
     <article class="card metric-card kpi-card">
-        <span class="metric-label">Saldo atual</span>
+        <span class="metric-label">Saldo</span>
         <strong>{{ summary.saldo_atual|currency }}</strong>
     </article>
     <article class="card metric-card kpi-card">
@@ -71,7 +71,7 @@
         <strong>{{ summary.entradas_periodo|currency }}</strong>
     </article>
     <article class="card metric-card kpi-card">
-        <span class="metric-label">Saídas</span>
+        <span class="metric-label">Saidas</span>
         <strong>{{ summary.saidas_periodo|currency }}</strong>
     </article>
     <article class="card metric-card kpi-card">
@@ -82,13 +82,13 @@
 
 <section class="grid charts-grid">
     <div class="card">
-        <p class="section-kicker">Evolução do saldo</p>
+        <p class="section-kicker">Saldo</p>
         <svg viewBox="0 0 320 120" class="line-chart">
             <polyline points="{{ line_chart.points }}" fill="none" stroke="var(--accent)" stroke-width="3"></polyline>
         </svg>
     </div>
     <div class="card">
-        <p class="section-kicker">Entradas vs saídas</p>
+        <p class="section-kicker">Entradas x saidas</p>
         <div class="bar-stack">
             {% for item in bar_chart %}
             <div class="bar-row">
@@ -110,7 +110,7 @@
             </svg>
             <div class="legend-stack">
                 {% for item in donut_chart %}
-                <div class="legend-item"><span class="legend-dot" style="background: {{ item.color }}"></span>{{ item.label }} · {{ item.value }}</div>
+                <div class="legend-item"><span class="legend-dot" style="background: {{ item.color }}"></span>{{ item.label }} | {{ item.value }}</div>
                 {% endfor %}
             </div>
         </div>
@@ -121,17 +121,17 @@
 <section class="card quick-entry-card" id="quick-entry">
     <div class="card-header">
         <div>
-            <p class="section-kicker">Novo lançamento</p>
-            <h2>Lançamento rápido</h2>
+            <p class="section-kicker">Novo</p>
+            <h2>Lancamento rapido</h2>
         </div>
         <div class="quick-entry-hints">
             <span class="status-badge status-neutral">E = Entrada</span>
-            <span class="status-badge status-neutral">S = Saída</span>
+            <span class="status-badge status-neutral">S = Saida</span>
             <span class="status-badge status-neutral">Enter = Salvar</span>
         </div>
     </div>
 
-    <form action="/fluxo-caixa/lancamentos" method="post" class="quick-entry-form" id="quick-entry-form" data-today="{{ today }}">
+    <form action="/fluxo-caixa/lancamentos" method="post" class="quick-entry-form" id="quick-entry-form" data-today="{{ today }}" data-loading-form="true" data-loading-text="Salvando lancamento...">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
         <section class="entry-block">
@@ -143,7 +143,7 @@
                     <span>Tipo</span>
                     <div class="segmented-control" id="type-segmented">
                         <button type="button" class="segment-button is-active" data-type-value="ENTRADA">Entrada</button>
-                        <button type="button" class="segment-button is-danger" data-type-value="SAIDA">Saída</button>
+                        <button type="button" class="segment-button is-danger" data-type-value="SAIDA">Saida</button>
                     </div>
                     <input type="hidden" name="type" id="entry-type" value="ENTRADA">
                 </div>
@@ -214,8 +214,8 @@
                 </label>
 
                 <label class="field field-description">
-                    <span>Descrição</span>
-                    <input type="text" name="description" id="entry-description" placeholder="Descrição opcional" list="description-suggestions">
+                    <span>Descricao</span>
+                    <input type="text" name="description" id="entry-description" placeholder="Descricao" list="description-suggestions">
                 </label>
             </div>
         </section>
@@ -377,7 +377,12 @@
 {% endif %}
 
 <section class="card">
-    <div class="card-header"><div><p class="section-kicker">Tabela detalhada</p><h2>Movimentações financeiras</h2></div></div>
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Tabela</p>
+            <h2>Lancamentos</h2>
+        </div>
+    </div>
     <div class="table-shell">
         {% for item in transactions %}
         <div class="table-row">
@@ -390,7 +395,7 @@
             <span>{{ item.account }}</span>
             <span>{{ item.store }}</span>
             {% if permissions.can_edit and item.editable %}
-            <form action="/fluxo-caixa/lancamentos/{{ item.id }}/excluir" method="post" data-confirm="Excluir este lançamento?">
+            <form action="/fluxo-caixa/lancamentos/{{ item.id }}/excluir" method="post" data-confirm="Excluir lancamento?" data-loading-form="true" data-loading-text="Excluindo lancamento...">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="secondary-action">Excluir</button>
             </form>
@@ -398,6 +403,8 @@
             <span>{{ item.source }}</span>
             {% endif %}
         </div>
+        {% else %}
+        <p class="empty-state">Nenhum lancamento no filtro atual.</p>
         {% endfor %}
     </div>
 </section>

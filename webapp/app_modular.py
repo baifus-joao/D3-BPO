@@ -37,6 +37,8 @@ from .erp import (
     count_active_admins,
     has_permission,
     load_history,
+    load_management_reports,
+    load_operational_reports,
     load_reference_lists,
     load_users,
     normalize_role,
@@ -540,22 +542,9 @@ async def management_reports_page(request: Request):
             "reports.html",
             "gestao",
             "relatorios",
-            "Relatórios de gestão",
-            "Visões da operação interna da D3 e preparação dos dados financeiros para análises futuras.",
-            {
-                "history": load_history(db, limit=6),
-                "reports_context": {
-                    "kicker_one": "Gestão",
-                    "title_one": "Indicadores internos",
-                    "text_one": "Fluxo de caixa, categorias, contas e indicadores da operação da própria D3.",
-                    "kicker_two": "Financeiro",
-                    "title_two": "Base para BI",
-                    "text_two": "Modelagem pronta para cortes por tempo, conta, categoria e unidade interna.",
-                    "kicker_three": "Exportação",
-                    "title_three": "Próximas integrações",
-                    "text_three": "CSV, Excel e conexões futuras com Power BI para gestão interna.",
-                },
-            },
+            "Relatorios de gestao",
+            "Leitura financeira da operacao interna.",
+            load_management_reports(db),
         )
 
 
@@ -571,28 +560,28 @@ async def operational_reports_page(request: Request):
             "reports.html",
             "operacoes",
             "relatorios",
-            "Relatórios operacionais",
-            "Acompanhamento das execuções feitas para clientes e base histórica das ferramentas da equipe operacional.",
-            {
-                "history": load_history(db, limit=6),
-                "reports_context": {
-                    "kicker_one": "Operações",
-                    "title_one": "Conciliação dos clientes",
-                    "text_one": "Use o histórico das execuções para medir produtividade, falhas e volume processado por período.",
-                    "kicker_two": "Rastreabilidade",
-                    "title_two": "Execução dos serviços",
-                    "text_two": "Acompanhe usuários, lotes processados e ocorrências das ferramentas operacionais.",
-                    "kicker_three": "Expansão",
-                    "title_three": "Novas ferramentas",
-                    "text_three": "O mesmo ambiente pode reunir outras rotinas de BPO e execução financeira para clientes.",
-                },
-            },
+            "Relatorios operacionais",
+            "Leitura das execucoes da equipe.",
+            load_operational_reports(db),
         )
 
 
 @app.get("/relatorios")
-async def reports_legacy():
-    return RedirectResponse("/hub", status_code=status.HTTP_303_SEE_OTHER)
+async def reports_selector(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        return _render(
+            request,
+            user,
+            "reports_selector.html",
+            "hub",
+            "relatorios",
+            "Relatorios",
+            "Escolha a area antes de abrir os relatorios.",
+            {},
+        )
 
 
 @app.get("/configuracoes", response_class=HTMLResponse)
@@ -624,7 +613,7 @@ async def conciliar(request: Request, vendas: UploadFile = File(...), recebiment
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         if not has_permission(user, "upload"):
             _set_flash(request, "Seu perfil não possui permissão para enviar arquivos.", "error")
-            return RedirectResponse("/conciliacao", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse("/operacoes/conciliacao", status_code=status.HTTP_303_SEE_OTHER)
         try:
             await _validate_csrf(request)
         except ConciliationUserError as exc:
@@ -678,7 +667,7 @@ async def create_cashflow_entry(request: Request, transaction_date: str = Form(.
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         if not has_permission(user, "edit"):
             _set_flash(request, "Seu perfil não possui permissão para criar lançamentos.", "error")
-            return RedirectResponse("/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse("/gestao/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
         await _validate_csrf(request)
         normalized_date = parse_date_input(transaction_date) or date.today()
         normalized_status = status_value if status_value in {"previsto", "realizado"} else "previsto"
@@ -707,7 +696,7 @@ async def delete_cashflow_entry(request: Request, transaction_id: int):
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         if not has_permission(user, "edit"):
             _set_flash(request, "Seu perfil não possui permissão para excluir lançamentos.", "error")
-            return RedirectResponse("/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse("/gestao/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
         await _validate_csrf(request)
         item = db.get(FinancialTransaction, transaction_id)
         if item and item.source != "conciliacao":
@@ -716,7 +705,7 @@ async def delete_cashflow_entry(request: Request, transaction_id: int):
             _set_flash(request, "Lançamento removido.", "success")
         else:
             _set_flash(request, "Lançamento não encontrado ou bloqueado.", "error")
-        return RedirectResponse("/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse("/gestao/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/configuracoes/usuario")
@@ -807,22 +796,22 @@ async def reset_password(request: Request, user_id: int, new_password: str = For
 
 @app.post("/cadastros/lojas")
 async def create_store(request: Request, name: str = Form(...), code: str = Form(...)):
-    return await _simple_create(request, Store(name=name.strip(), code=code.strip().upper()), "/cadastros", "Loja cadastrada.")
+    return await _simple_create(request, Store(name=name.strip(), code=code.strip().upper()), "/gestao/cadastros", "Loja cadastrada.")
 
 
 @app.post("/cadastros/contas")
 async def create_account(request: Request, name: str = Form(...), bank_name: str = Form(...), branch: str = Form(default=""), account_number: str = Form(default="")):
-    return await _simple_create(request, BankAccount(name=name.strip(), bank_name=bank_name.strip(), branch=branch.strip(), account_number=account_number.strip()), "/cadastros", "Conta bancária cadastrada.")
+    return await _simple_create(request, BankAccount(name=name.strip(), bank_name=bank_name.strip(), branch=branch.strip(), account_number=account_number.strip()), "/gestao/cadastros", "Conta salva.")
 
 
 @app.post("/cadastros/categorias")
 async def create_category(request: Request, name: str = Form(...), type: str = Form(...), color: str = Form(default="#22ffc4")):
-    return await _simple_create(request, FinancialCategory(name=name.strip(), type=type if type in {"ENTRADA", "SAIDA"} else "ENTRADA", color=color.strip() or "#22ffc4"), "/cadastros", "Categoria cadastrada.")
+    return await _simple_create(request, FinancialCategory(name=name.strip(), type=type if type in {"ENTRADA", "SAIDA"} else "ENTRADA", color=color.strip() or "#22ffc4"), "/gestao/cadastros", "Categoria cadastrada.")
 
 
 @app.post("/cadastros/formas-pagamento")
 async def create_payment_method(request: Request, name: str = Form(...), code: str = Form(...)):
-    return await _simple_create(request, PaymentMethod(name=name.strip(), code=code.strip().upper()), "/cadastros", "Forma de pagamento cadastrada.")
+    return await _simple_create(request, PaymentMethod(name=name.strip(), code=code.strip().upper()), "/gestao/cadastros", "Forma de pagamento cadastrada.")
 
 
 async def _simple_create(request: Request, obj, redirect_to: str, success_message: str):

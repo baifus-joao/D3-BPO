@@ -1,33 +1,183 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="grid three-col">
-    <article class="card">
-        <p class="section-kicker">{{ reports_context.kicker_one }}</p>
-        <h2>{{ reports_context.title_one }}</h2>
-        <p>{{ reports_context.text_one }}</p>
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Area</p>
+            <h2>Relatorios</h2>
+        </div>
+        <div class="actions">
+            <a href="/gestao/relatorios" class="{% if current_area == 'gestao' %}button-link{% else %}ghost-button button-link{% endif %}" data-loading-link="true">Gestao</a>
+            <a href="/operacoes/relatorios" class="{% if current_area == 'operacoes' %}button-link{% else %}ghost-button button-link{% endif %}" data-loading-link="true">Operacoes</a>
+        </div>
+    </div>
+</section>
+
+<section class="grid four-col compact-grid">
+    {% for item in metrics %}
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">{{ item.label }}</span>
+        {% if item.kind == "count" %}
+        <strong>{{ item.value }}</strong>
+        {% elif item.kind == "percent" %}
+        <strong>{{ item.value }}%</strong>
+        {% elif item.kind == "duration" %}
+        <strong>{{ item.value }} ms</strong>
+        {% else %}
+        <strong>{{ item.value|currency }}</strong>
+        {% endif %}
     </article>
+    {% endfor %}
+</section>
+
+{% if report_type == "management" %}
+<section class="grid two-col">
     <article class="card">
-        <p class="section-kicker">{{ reports_context.kicker_two }}</p>
-        <h2>{{ reports_context.title_two }}</h2>
-        <p>{{ reports_context.text_two }}</p>
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Resumo</p>
+                <h2>Por mes</h2>
+            </div>
+        </div>
+        <div class="table-shell">
+            {% for item in monthly_rows %}
+            <div class="table-row">
+                <span>{{ item.label }}</span>
+                <span>{{ item.entradas|currency }}</span>
+                <span>{{ item.saidas|currency }}</span>
+                <span>{{ item.resultado|currency }}</span>
+            </div>
+            {% else %}
+            <p class="empty-state">Sem dados financeiros ainda.</p>
+            {% endfor %}
+        </div>
     </article>
+
     <article class="card">
-        <p class="section-kicker">{{ reports_context.kicker_three }}</p>
-        <h2>{{ reports_context.title_three }}</h2>
-        <p>{{ reports_context.text_three }}</p>
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Categorias</p>
+                <h2>Maior peso</h2>
+            </div>
+        </div>
+        <div class="list-stack">
+            {% for item in top_categories %}
+            <div class="list-item">
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.value|currency }}</span>
+            </div>
+            {% else %}
+            <p class="empty-state">Sem categorias com saida ainda.</p>
+            {% endfor %}
+        </div>
     </article>
 </section>
+
+<section class="grid two-col">
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Saldo</p>
+                <h2>Por conta</h2>
+            </div>
+        </div>
+        <div class="list-stack">
+            {% for item in account_rows %}
+            <div class="list-item">
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.value|currency }}</span>
+            </div>
+            {% else %}
+            <p class="empty-state">Sem movimentacoes por conta.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Recentes</p>
+                <h2>Ultimos lancamentos</h2>
+            </div>
+        </div>
+        <div class="table-shell">
+            {% for item in recent_rows %}
+            <div class="table-row">
+                <span>{{ item.date }}</span>
+                <span>{{ item.description }}</span>
+                <span>{{ item.category }}</span>
+                <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+                <span>{{ item.amount|currency }}</span>
+            </div>
+            {% else %}
+            <p class="empty-state">Sem lancamentos recentes.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% else %}
+<section class="grid two-col">
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Equipe</p>
+                <h2>Por usuario</h2>
+            </div>
+        </div>
+        <div class="table-shell">
+            {% for item in user_rows %}
+            <div class="table-row">
+                <span>{{ item.label }}</span>
+                <span>{{ item.runs }} exec.</span>
+                <span>{{ item.processed }} linhas</span>
+                <span>{{ item.errors }} erros</span>
+            </div>
+            {% else %}
+            <p class="empty-state">Sem execucoes registradas.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Historico</p>
+                <h2>Ultimas execucoes</h2>
+            </div>
+        </div>
+        <div class="table-shell">
+            {% for item in recent_runs %}
+            <div class="table-row">
+                <span>{{ item.executed_at }}</span>
+                <span>{{ item.user_name }}</span>
+                <span>{{ item.processed }} linhas</span>
+                <span>{{ item.duration }} ms</span>
+                <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+            </div>
+            {% else %}
+            <p class="empty-state">Sem execucoes recentes.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+{% if recent_errors %}
 <section class="card">
-    <p class="section-kicker">Últimas execuções</p>
-    <div class="table-shell">
-        {% for item in history %}
-        <div class="table-row">
-            <span>{{ item.executed_at }}</span>
-            <span>{{ item.user_name }}</span>
-            <span>{{ item.arquivo_vendas }}</span>
-            <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Falhas</p>
+            <h2>Ultimos erros</h2>
+        </div>
+    </div>
+    <div class="list-stack">
+        {% for item in recent_errors %}
+        <div class="list-item">
+            <strong>{{ item.executed_at }} | {{ item.user_name }}</strong>
+            <span>{{ item.detail }}</span>
         </div>
         {% endfor %}
     </div>
 </section>
+{% endif %}
+{% endif %}
 {% endblock %}

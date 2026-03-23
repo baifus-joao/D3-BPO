@@ -5,7 +5,7 @@
         <div class="card-header">
             <div>
                 <p class="section-kicker">Lojas</p>
-                <h2>Unidades internas</h2>
+                <h2>Unidades</h2>
             </div>
         </div>
         <div class="cadastro-list">
@@ -21,11 +21,11 @@
             {% endfor %}
         </div>
         {% if permissions.is_admin %}
-        <form action="/cadastros/lojas" method="post" class="cadastro-form cadastro-form-three">
+        <form action="/cadastros/lojas" method="post" class="cadastro-form cadastro-form-three" data-loading-form="true" data-loading-text="Salvando loja...">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input name="name" placeholder="Nome da loja" required>
-            <input name="code" placeholder="Código" required>
-            <button type="submit">Adicionar loja</button>
+            <input name="code" placeholder="Codigo" required>
+            <button type="submit">Salvar loja</button>
         </form>
         {% endif %}
     </div>
@@ -33,7 +33,7 @@
     <div class="card cadastro-card">
         <div class="card-header">
             <div>
-                <p class="section-kicker">Contas bancárias</p>
+                <p class="section-kicker">Contas</p>
                 <h2>Contas da D3</h2>
             </div>
         </div>
@@ -42,7 +42,7 @@
             <div class="cadastro-item">
                 <div class="cadastro-item-main">
                     <strong>{{ item.name }}</strong>
-                    <span>{{ item.bank_name }} · {{ item.account_number }}</span>
+                    <span>{{ item.bank_name }} | {{ item.account_number }}</span>
                 </div>
             </div>
             {% else %}
@@ -50,13 +50,13 @@
             {% endfor %}
         </div>
         {% if permissions.is_admin %}
-        <form action="/cadastros/contas" method="post" class="cadastro-form cadastro-form-account">
+        <form action="/cadastros/contas" method="post" class="cadastro-form cadastro-form-account" data-loading-form="true" data-loading-text="Salvando conta...">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input name="name" placeholder="Nome da conta" required>
             <input name="bank_name" placeholder="Banco" required>
-            <input name="branch" placeholder="Agência">
+            <input name="branch" placeholder="Agencia">
             <input name="account_number" placeholder="Conta">
-            <button type="submit">Adicionar conta</button>
+            <button type="submit">Salvar conta</button>
         </form>
         {% endif %}
     </div>
@@ -66,8 +66,8 @@
     <div class="card cadastro-card">
         <div class="card-header">
             <div>
-                <p class="section-kicker">Categorias financeiras</p>
-                <h2>Classificação do caixa</h2>
+                <p class="section-kicker">Categorias</p>
+                <h2>Classificacao</h2>
             </div>
         </div>
         <div class="cadastro-list">
@@ -84,15 +84,15 @@
             {% endfor %}
         </div>
         {% if permissions.is_admin %}
-        <form action="/cadastros/categorias" method="post" class="cadastro-form cadastro-form-category">
+        <form action="/cadastros/categorias" method="post" class="cadastro-form cadastro-form-category" data-loading-form="true" data-loading-text="Salvando categoria...">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input name="name" placeholder="Categoria" required>
             <select name="type">
                 <option value="ENTRADA">Entrada</option>
-                <option value="SAIDA">Saída</option>
+                <option value="SAIDA">Saida</option>
             </select>
             <input name="color" type="color" value="#22ffc4">
-            <button type="submit">Adicionar categoria</button>
+            <button type="submit">Salvar categoria</button>
         </form>
         {% endif %}
     </div>
@@ -100,8 +100,8 @@
     <div class="card cadastro-card">
         <div class="card-header">
             <div>
-                <p class="section-kicker">Formas de pagamento</p>
-                <h2>Meios aceitos</h2>
+                <p class="section-kicker">Pagamentos</p>
+                <h2>Formas</h2>
             </div>
         </div>
         <div class="cadastro-list">
@@ -117,11 +117,11 @@
             {% endfor %}
         </div>
         {% if permissions.is_admin %}
-        <form action="/cadastros/formas-pagamento" method="post" class="cadastro-form cadastro-form-three">
+        <form action="/cadastros/formas-pagamento" method="post" class="cadastro-form cadastro-form-three" data-loading-form="true" data-loading-text="Salvando forma...">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input name="name" placeholder="Forma de pagamento" required>
-            <input name="code" placeholder="Código" required>
-            <button type="submit">Adicionar forma</button>
+            <input name="code" placeholder="Codigo" required>
+            <button type="submit">Salvar forma</button>
         </form>
         {% endif %}
     </div>

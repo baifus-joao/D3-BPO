@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Relatorios</p>
+            <h2>Escolha a area</h2>
+        </div>
+    </div>
+    <p class="page-subtitle">Cada area tem sua propria leitura e seus proprios modulos.</p>
+</section>
+
+<section class="grid two-col">
+    <a href="/gestao/relatorios" class="context-card-link" data-loading-link="true">
+        <article class="card context-card">
+            <p class="section-kicker">Gestao</p>
+            <h2>Relatorios da gestao</h2>
+            <p>Fluxo de caixa, contas, categorias e futuras visoes internas.</p>
+            <div class="context-tags">
+                <span class="context-chip">Fluxo de caixa</span>
+                <span class="context-chip">Cadastros</span>
+            </div>
+        </article>
+    </a>
+
+    <a href="/operacoes/relatorios" class="context-card-link" data-loading-link="true">
+        <article class="card context-card">
+            <p class="section-kicker">Operacoes</p>
+            <h2>Relatorios operacionais</h2>
+            <p>Conciliacao, equipe, historico de execucoes e novos modulos.</p>
+            <div class="context-tags">
+                <span class="context-chip">Conciliacao</span>
+                <span class="context-chip">Equipe</span>
+            </div>
+        </article>
+    </a>
+</section>
+{% endblock %}

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>D3 Hub | Seleção de sistema</title>
+    <title>D3 Hub | Sistemas</title>
     <script>
         (() => {
             const savedTheme = localStorage.getItem("d3-theme");
@@ -11,10 +11,18 @@
             document.documentElement.setAttribute("data-theme", theme);
         })();
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260323-2">
-    <link rel="stylesheet" href="/static/hub.css?v=20260323-1">
+    <link rel="stylesheet" href="/static/styles.css?v=20260323-3">
+    <link rel="stylesheet" href="/static/hub.css?v=20260323-2">
 </head>
 <body>
+    <div class="loading-overlay" id="page-loading" aria-hidden="true">
+        <div class="loading-card" role="status" aria-live="polite">
+            <div class="loading-spinner"></div>
+            <strong id="page-loading-title">Carregando</strong>
+            <span id="page-loading-text">Abrindo modulo...</span>
+        </div>
+    </div>
+
     <main class="system-selector-page">
         <section class="system-selector-shell">
             <div class="system-selector-topbar">
@@ -27,7 +35,7 @@
                 </div>
                 <div class="header-actions">
                     <button type="button" class="theme-toggle" id="theme-toggle">Tema claro</button>
-                    <form action="/logout" method="post">
+                    <form action="/logout" method="post" data-loading-form="true" data-loading-text="Saindo...">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <button type="submit" class="ghost-button">Sair</button>
                     </form>
@@ -40,22 +48,22 @@
 
             <section class="system-selector-body">
                 <div class="selector-copy">
-                    <p class="section-kicker">Selecione o sistema</p>
-                    <h1 class="app-title">Escolha onde deseja trabalhar</h1>
-                    <p class="page-subtitle">A gestão interna da D3 e as ferramentas operacionais para clientes ficam separadas, mas compartilham o mesmo ambiente e o mesmo login.</p>
+                    <p class="section-kicker">Escolha o modulo</p>
+                    <h1 class="app-title">Onde voce quer trabalhar?</h1>
+                    <p class="page-subtitle">Dois contextos. Um login.</p>
                 </div>
 
                 <div class="system-selector-grid">
-                    <a class="system-card" href="/gestao/dashboard">
-                        <p class="section-kicker">D3 Gestão</p>
-                        <h2>Gestão interna da D3</h2>
-                        <p>Fluxo de caixa, cadastros financeiros e relatórios internos da própria empresa.</p>
+                    <a class="system-card" href="/gestao/dashboard" data-loading-link="true" data-loading-text="Abrindo Gestao...">
+                        <p class="section-kicker">D3 Gestao</p>
+                        <h2>Gestao interna</h2>
+                        <p>Caixa, cadastros e relatorios.</p>
                     </a>
 
-                    <a class="system-card" href="/operacoes/dashboard">
-                        <p class="section-kicker">D3 Operações</p>
-                        <h2>Ferramentas para os clientes</h2>
-                        <p>Conciliação e demais rotinas usadas pela equipe para executar os serviços prestados aos clientes.</p>
+                    <a class="system-card" href="/operacoes/dashboard" data-loading-link="true" data-loading-text="Abrindo Operacoes...">
+                        <p class="section-kicker">D3 Operacoes</p>
+                        <h2>Operacao dos clientes</h2>
+                        <p>Conciliacao e execucao.</p>
                     </a>
                 </div>
             </section>
@@ -78,6 +86,26 @@
             });
             syncThemeLabel();
         }
+
+        const loadingOverlay = document.getElementById("page-loading");
+        const loadingText = document.getElementById("page-loading-text");
+
+        const showLoading = (text) => {
+            loadingText.textContent = text || "Abrindo...";
+            loadingOverlay.classList.add("is-visible");
+            loadingOverlay.setAttribute("aria-hidden", "false");
+        };
+
+        document.querySelectorAll("form[data-loading-form=\"true\"]").forEach((formElement) => {
+            formElement.addEventListener("submit", () => showLoading(formElement.dataset.loadingText));
+        });
+
+        document.querySelectorAll("a[data-loading-link=\"true\"]").forEach((link) => {
+            link.addEventListener("click", (event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                showLoading(link.dataset.loadingText);
+            });
+        });
     </script>
 </body>
 </html>

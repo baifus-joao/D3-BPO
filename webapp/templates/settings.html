@@ -2,18 +2,18 @@
 {% block content %}
 <section class="grid two-col">
     <div class="card">
-        <div class="card-header"><div><p class="section-kicker">Meu perfil</p><h2>Configurações do usuário</h2></div></div>
-        <form action="/configuracoes/usuario" method="post" class="form">
+        <div class="card-header"><div><p class="section-kicker">Perfil</p><h2>Minha conta</h2></div></div>
+        <form action="/configuracoes/usuario" method="post" class="form" data-loading-form="true" data-loading-text="Salvando perfil...">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label class="field"><span>Nome</span><input name="name" value="{{ current_user.name }}" required></label>
-            <label class="field"><span>Email</span><input name="email" type="email" value="{{ current_user.email }}" required></label>
+            <label class="field"><span>E-mail</span><input name="email" type="email" value="{{ current_user.email }}" required></label>
             <label class="field"><span>Senha atual</span><input name="current_password" type="password"></label>
             <label class="field"><span>Nova senha</span><input name="new_password" type="password"></label>
-            <button type="submit">Salvar perfil</button>
+            <button type="submit">Salvar</button>
         </form>
     </div>
     <div class="card">
-        <p class="section-kicker">Permissões</p>
+        <p class="section-kicker">Acessos</p>
         <div class="list-stack">
             {% for permission in current_user.permissions %}
             <div class="list-item"><strong>{{ permission }}</strong><span>{{ current_user.role_label }}</span></div>
@@ -25,8 +25,8 @@
 <section class="card">
     <div class="card-header">
         <div>
-            <p class="section-kicker">Rastreabilidade</p>
-            <h2>Histórico de execuções</h2>
+            <p class="section-kicker">Historico</p>
+            <h2>Ultimas execucoes</h2>
         </div>
     </div>
     {% if history %}
@@ -44,25 +44,25 @@
         {% endfor %}
     </div>
     {% else %}
-    <p class="empty-state">Nenhuma execução registrada.</p>
+    <p class="empty-state">Sem execucoes.</p>
     {% endif %}
 </section>
 
 {% if permissions.is_admin %}
 <section class="card">
-    <div class="card-header"><div><p class="section-kicker">Administração</p><h2>Usuários do sistema</h2></div></div>
-    <form action="/admin/users" method="post" class="toolbar-grid">
+    <div class="card-header"><div><p class="section-kicker">Admin</p><h2>Usuarios</h2></div></div>
+    <form action="/admin/users" method="post" class="toolbar-grid" data-loading-form="true" data-loading-text="Criando usuario...">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input name="name" placeholder="Nome completo" required>
+        <input name="name" placeholder="Nome" required>
         <input name="email" type="email" placeholder="E-mail" required>
         <select name="role"><option value="operacional">Operacional</option><option value="visualizador">Visualizador</option><option value="admin">Admin</option></select>
         <input name="password" type="password" placeholder="Senha inicial" required>
-        <button type="submit">Criar usuário</button>
+        <button type="submit">Criar</button>
     </form>
     <div class="table-shell">
         {% for user in users %}
         <div class="user-admin-row">
-            <form action="/admin/users/{{ user.id }}/update" method="post" class="toolbar-grid" data-confirm="Salvar alterações do usuário {{ user.name }}?">
+            <form action="/admin/users/{{ user.id }}/update" method="post" class="toolbar-grid" data-confirm="Salvar usuario {{ user.name }}?" data-loading-form="true" data-loading-text="Salvando usuario...">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input name="name" value="{{ user.name }}" required>
                 <input name="email" type="email" value="{{ user.email }}" required>
@@ -70,7 +70,7 @@
                 <label class="toggle"><input type="checkbox" name="is_active" {% if user.is_active %}checked{% endif %}><span>Ativo</span></label>
                 <button type="submit">Salvar</button>
             </form>
-            <form action="/admin/users/{{ user.id }}/reset-password" method="post" class="toolbar-grid" data-confirm="Redefinir a senha do usuário {{ user.name }}?">
+            <form action="/admin/users/{{ user.id }}/reset-password" method="post" class="toolbar-grid" data-confirm="Redefinir senha de {{ user.name }}?" data-loading-form="true" data-loading-text="Redefinindo senha...">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input name="new_password" type="password" placeholder="Nova senha" required>
                 <button type="submit" class="secondary-action">Redefinir senha</button>

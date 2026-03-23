@@ -11,33 +11,42 @@
             document.documentElement.setAttribute("data-theme", theme);
         })();
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260323-2">
+    <link rel="stylesheet" href="/static/styles.css?v=20260323-3">
 </head>
 <body>
+    <div class="loading-overlay" id="page-loading" aria-hidden="true">
+        <div class="loading-card" role="status" aria-live="polite">
+            <div class="loading-spinner"></div>
+            <strong id="page-loading-title">Carregando</strong>
+            <span id="page-loading-text">Processando...</span>
+        </div>
+    </div>
+
     <div class="shell">
         <aside class="sidebar">
             <div class="sidebar-system-switch">
                 <span class="context-chip">{{ current_area_meta.label }}</span>
-                <a href="/hub" class="secondary-link">Trocar sistema</a>
+                <a href="/hub" class="secondary-link" data-loading-link="true" data-loading-text="Abrindo hub...">Trocar sistema</a>
             </div>
 
             <section class="sidebar-section">
-                <span class="sidebar-label">Navegação</span>
+                <span class="sidebar-label">Menu</span>
                 <nav class="sidebar-nav">
                     {% for item in nav_items %}
-                    <a href="{{ item.href }}" class="nav-link {% if item.active %}active{% endif %}">{{ item.label }}</a>
+                    <a href="{{ item.href }}" class="nav-link {% if item.active %}active{% endif %}" data-loading-link="true">{{ item.label }}</a>
                     {% endfor %}
                 </nav>
-                <a href="/hub" class="hub-return-link">Voltar para seleção de sistemas</a>
+                <a href="/hub" class="hub-return-link" data-loading-link="true" data-loading-text="Voltando ao hub...">Voltar ao hub</a>
             </section>
 
             <section class="sidebar-box">
-                <span class="sidebar-label">Sessão</span>
+                <span class="sidebar-label">Sessao</span>
                 <strong>{{ current_user.name }}</strong>
                 <span>{{ current_user.role_label }}</span>
                 <span>{{ current_user.email }}</span>
             </section>
         </aside>
+
         <div class="content-area">
             <header class="header">
                 <div>
@@ -46,8 +55,7 @@
                 </div>
                 <div class="header-actions">
                     <button type="button" class="theme-toggle" id="theme-toggle">Tema claro</button>
-                    <button type="button" class="notify-button" aria-label="Notificações futuras">Notificações</button>
-                    <form action="/logout" method="post">
+                    <form action="/logout" method="post" data-loading-form="true" data-loading-text="Saindo...">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <button type="submit" class="ghost-button">Sair</button>
                     </form>
@@ -63,6 +71,7 @@
             </main>
         </div>
     </div>
+
     <script>
         const themeToggle = document.getElementById("theme-toggle");
         if (themeToggle) {
@@ -80,6 +89,24 @@
             syncThemeLabel();
         }
 
+        const loadingOverlay = document.getElementById("page-loading");
+        const loadingTitle = document.getElementById("page-loading-title");
+        const loadingText = document.getElementById("page-loading-text");
+
+        const showLoading = (text) => {
+            if (!loadingOverlay) return;
+            loadingTitle.textContent = "Carregando";
+            loadingText.textContent = text || "Processando...";
+            loadingOverlay.classList.add("is-visible");
+            loadingOverlay.setAttribute("aria-hidden", "false");
+        };
+
+        const hideLoading = () => {
+            if (!loadingOverlay) return;
+            loadingOverlay.classList.remove("is-visible");
+            loadingOverlay.setAttribute("aria-hidden", "true");
+        };
+
         document.querySelectorAll("form[data-confirm]").forEach((formElement) => {
             formElement.addEventListener("submit", (event) => {
                 const message = formElement.dataset.confirm;
@@ -87,6 +114,27 @@
                     event.preventDefault();
                 }
             });
+        });
+
+        document.querySelectorAll("form[data-loading-form=\"true\"]").forEach((formElement) => {
+            formElement.addEventListener("submit", () => {
+                showLoading(formElement.dataset.loadingText || "Processando...");
+            });
+        });
+
+        document.querySelectorAll("a[data-loading-link=\"true\"]").forEach((link) => {
+            link.addEventListener("click", (event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                showLoading(link.dataset.loadingText || "Abrindo...");
+                if (link.dataset.downloadLink === "true") {
+                    window.setTimeout(hideLoading, 1800);
+                }
+            });
+        });
+
+        window.addEventListener("pageshow", hideLoading);
+        window.addEventListener("focus", () => {
+            window.setTimeout(hideLoading, 120);
         });
     </script>
 </body>

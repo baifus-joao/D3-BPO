@@ -4,26 +4,28 @@
     <div class="card">
         <div class="card-header">
             <div>
-                <p class="section-kicker">Execução concluída</p>
+                <p class="section-kicker">Concluido</p>
                 <h2>Resumo do lote</h2>
             </div>
         </div>
         <section class="grid four-col compact-grid">
-            <article class="metric-card"><span class="metric-label">Total processado</span><strong>{{ summary.qtde_total_processado }}</strong></article>
-            <article class="metric-card"><span class="metric-label">Linhas vendas</span><strong>{{ summary.qtde_linhas_vendas }}</strong></article>
-            <article class="metric-card"><span class="metric-label">Linhas recebimentos</span><strong>{{ summary.qtde_linhas_recebimentos }}</strong></article>
-            <article class="metric-card"><span class="metric-label">Arquivo final</span><strong>{{ summary.arquivo_saida }}</strong></article>
+            <article class="metric-card"><span class="metric-label">Total</span><strong>{{ summary.qtde_total_processado }}</strong></article>
+            <article class="metric-card"><span class="metric-label">Vendas</span><strong>{{ summary.qtde_linhas_vendas }}</strong></article>
+            <article class="metric-card"><span class="metric-label">Recebimentos</span><strong>{{ summary.qtde_linhas_recebimentos }}</strong></article>
+            <article class="metric-card"><span class="metric-label">Arquivo</span><strong>{{ summary.arquivo_saida }}</strong></article>
         </section>
         <div class="actions">
-            <a class="button-link" href="/download/{{ download_token }}">Baixar Excel conciliado</a>
-            <a class="secondary-link" href="/operacoes/conciliacao">Voltar à conciliação</a>
+            <a class="button-link" href="/download/{{ download_token }}" data-loading-link="true" data-download-link="true" data-loading-text="Preparando arquivo...">Baixar arquivo</a>
+            <a class="secondary-link" href="/operacoes/conciliacao" data-loading-link="true">Voltar</a>
         </div>
     </div>
     <div class="card">
-        <p class="section-kicker">Últimas execuções</p>
+        <p class="section-kicker">Historico</p>
         <div class="list-stack">
             {% for item in history %}
-            <div class="list-item"><strong>{{ item.executed_at }}</strong><span>{{ item.user_name }} · {{ item.qtde_total_processado }} linhas</span></div>
+            <div class="list-item"><strong>{{ item.executed_at }}</strong><span>{{ item.user_name }} | {{ item.qtde_total_processado }} linhas</span></div>
+            {% else %}
+            <p class="empty-state">Sem execucoes recentes.</p>
             {% endfor %}
         </div>
     </div>

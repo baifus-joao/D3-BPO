@@ -13,13 +13,13 @@
                 <strong>{{ dashboard_context.module_count }}</strong>
             </article>
             <article class="metric-card">
-                <span class="metric-label">Perfil atual</span>
+                <span class="metric-label">Perfil</span>
                 <strong>{{ current_user.role_label }}</strong>
             </article>
         </div>
     </div>
     <div class="card">
-        <p class="section-kicker">Próximos movimentos</p>
+        <p class="section-kicker">Proximos</p>
         <div class="list-stack">
             {% for item in upcoming %}
             <article class="list-item">
@@ -27,7 +27,7 @@
                 <span>{{ item.transaction_date|shortdate }} · {{ item.amount|currency }}</span>
             </article>
             {% else %}
-            <p class="empty-state">Nenhum lançamento previsto.</p>
+            <p class="empty-state">Nada previsto.</p>
             {% endfor %}
         </div>
     </div>
@@ -36,7 +36,7 @@
 <section class="grid four-col">
     <article class="card metric-card"><span class="metric-label">{{ dashboard_context.secondary_label }}</span><strong>{{ dashboard_context.secondary_value }}</strong></article>
     <article class="card metric-card"><span class="metric-label">Lojas</span><strong>{{ reference.stores|length }}</strong></article>
-    <article class="card metric-card"><span class="metric-label">Contas bancárias</span><strong>{{ reference.accounts|length }}</strong></article>
+    <article class="card metric-card"><span class="metric-label">Contas</span><strong>{{ reference.accounts|length }}</strong></article>
     <article class="card metric-card"><span class="metric-label">Categorias</span><strong>{{ reference.categories|length }}</strong></article>
 </section>
 {% endblock %}
