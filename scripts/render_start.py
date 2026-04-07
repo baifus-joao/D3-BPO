@@ -69,7 +69,6 @@ SCHEMA_REVISIONS: tuple[tuple[str, set[str]], ...] = (
     ("20260406_0007", {"dilmaria_pop_drafts"}),
 )
 REVISION_ORDER = [revision for revision, _ in SCHEMA_REVISIONS]
-REVISION_INDEX = {revision: index for index, revision in enumerate(REVISION_ORDER)}
 
 
 def _run(*args: str) -> None:
@@ -97,10 +96,7 @@ def _prepare_database() -> None:
     current_revision = _read_current_revision(table_names)
     detected_revision = _detect_existing_revision(table_names)
 
-    if detected_revision and (
-        current_revision is None
-        or REVISION_INDEX.get(current_revision, -1) < REVISION_INDEX[detected_revision]
-    ):
+    if detected_revision and current_revision != detected_revision:
         print(
             "[render_start] Existing schema detected, "
             f"stamping revision {detected_revision} (current={current_revision or 'none'})",
