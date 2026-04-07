@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi.testclient import TestClient
+
+from webapp.dilmaria.pop_schema import PopRequest
+from webapp.dilmaria.pop_service import _build_document, _build_pop
 
 
 def build_guided_payload() -> dict:
@@ -130,3 +135,102 @@ def test_dilmaria_run_clears_saved_draft(authenticated_client: TestClient) -> No
     loaded = authenticated_client.get("/operacoes/dilmaria/api/draft")
     assert loaded.status_code == 200
     assert loaded.json()["draft"] is None
+
+
+def test_naturale_document_keeps_observation_after_activity_step() -> None:
+    request = PopRequest.model_validate(
+        {
+            "structure_key": "pop_naturale",
+            "titulo": "Procedimento de Teste Naturale",
+            "codigo": "PO-TEST-001",
+            "data": date(2026, 4, 6),
+            "objetivo": "Garantir a ordem correta dos elementos no documento.",
+            "documentos_referencia": ["Manual interno"],
+            "local_aplicacao": "Clinica teste",
+            "responsabilidade_execucao": "Equipe operacional",
+            "definicoes_siglas": [{"termo": "POP", "descricao": "Procedimento Operacional Padrao"}],
+            "atividades": [
+                {
+                    "titulo": "Execucao",
+                    "itens": [
+                        {
+                            "descricao": "Executar o passo principal do procedimento.",
+                            "observacao": "Registrar a evidencia logo apos a execucao.",
+                        }
+                    ],
+                }
+            ],
+            "criterios_avaliacao": ["Passo registrado corretamente."],
+            "boas_praticas": ["Seguir o fluxo definido."],
+            "erros_criticos": ["Pular o registro da evidencia."],
+            "termo": {
+                "nome_responsavel": "Paula Pereira",
+                "declaracao": "Declaro que li e compreendi o procedimento.",
+                "elaborado_por": "Paula Pereira",
+                "aprovado_por": "Carlos Souza",
+                "local": "Sao Paulo",
+                "data": date(2026, 4, 6),
+            },
+        }
+    )
+
+    pop = _build_pop(request, "Rev.01", "pop_naturale", "POP Naturale")
+    document = _build_document(pop)
+    paragraph_texts = [paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()]
+
+    step_index = paragraph_texts.index("6.1.1 Executar o passo principal do procedimento.")
+    observation_index = paragraph_texts.index("Observação: Registrar a evidencia logo apos a execucao.")
+
+    assert observation_index == step_index + 1
+
+
+def test_naturale_document_applies_heading_hierarchy() -> None:
+    request = PopRequest.model_validate(
+        {
+            "structure_key": "pop_naturale",
+            "titulo": "Procedimento de Teste Naturale",
+            "codigo": "PO-TEST-002",
+            "data": date(2026, 4, 6),
+            "objetivo": "Garantir destaque coerente para titulos e subtitulos.",
+            "documentos_referencia": ["Manual interno"],
+            "local_aplicacao": "Clinica teste",
+            "responsabilidade_execucao": "Equipe operacional",
+            "definicoes_siglas": [{"termo": "POP", "descricao": "Procedimento Operacional Padrao"}],
+            "atividades": [
+                {
+                    "titulo": "Execucao",
+                    "materiais": ["Checklist"],
+                    "preparacao": ["Preparar o ambiente."],
+                    "etapas_iniciais": ["Validar materiais."],
+                    "itens": [{"descricao": "Executar o passo principal do procedimento."}],
+                }
+            ],
+            "criterios_avaliacao": ["Passo registrado corretamente."],
+            "boas_praticas": ["Seguir o fluxo definido."],
+            "erros_criticos": ["Pular o registro da evidencia."],
+            "termo": {
+                "nome_responsavel": "Paula Pereira",
+                "declaracao": "Declaro que li e compreendi o procedimento.",
+                "elaborado_por": "Paula Pereira",
+                "aprovado_por": "Carlos Souza",
+                "local": "Sao Paulo",
+                "data": date(2026, 4, 6),
+            },
+        }
+    )
+
+    pop = _build_pop(request, "Rev.01", "pop_naturale", "POP Naturale")
+    document = _build_document(pop)
+
+    paragraphs = {paragraph.text.strip(): paragraph for paragraph in document.paragraphs if paragraph.text.strip()}
+
+    section = paragraphs["1. Objetivo"]
+    subsection = paragraphs["6.1 Execucao"]
+    label = paragraphs["Materiais Necessários"]
+
+    assert section.runs[0].bold is True
+    assert int(section.runs[0].font.size.pt) == 15
+    assert subsection.runs[0].bold is True
+    assert int(subsection.runs[0].font.size.pt) == 13
+    assert label.runs[0].bold is True
+    assert int(label.runs[0].font.size.pt) == 11

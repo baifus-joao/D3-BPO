@@ -49,6 +49,7 @@ MONTH_NAMES_PT_BR = {
 TITLE_COLOR = RGBColor(28, 61, 107)
 SUBTITLE_COLOR = RGBColor(88, 88, 88)
 TEXT_COLOR = RGBColor(38, 38, 38)
+LABEL_COLOR = RGBColor(70, 70, 70)
 
 
 async def run_pop_generator_agent(
@@ -321,6 +322,18 @@ def _apply_run_format(
     run.font.all_caps = all_caps
 
 
+def _apply_section_heading_format(run) -> None:
+    _apply_run_format(run, size=15, bold=True, color=TITLE_COLOR)
+
+
+def _apply_subsection_heading_format(run) -> None:
+    _apply_run_format(run, size=13, bold=True, color=LABEL_COLOR)
+
+
+def _apply_label_heading_format(run) -> None:
+    _apply_run_format(run, size=11, bold=True, color=LABEL_COLOR)
+
+
 def _format_title_paragraph(paragraph) -> None:
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     paragraph.paragraph_format.space_before = Pt(6)
@@ -344,9 +357,14 @@ def _format_summary_heading_paragraph(paragraph) -> None:
 
 def _format_section_paragraph(paragraph, level: int) -> None:
     paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    paragraph.paragraph_format.space_before = Pt(12 if level == 1 else 8)
-    paragraph.paragraph_format.space_after = Pt(4)
-    paragraph.paragraph_format.line_spacing = 1.08
+    paragraph.paragraph_format.keep_with_next = True
+    if level == 1:
+        paragraph.paragraph_format.space_before = Pt(14)
+        paragraph.paragraph_format.space_after = Pt(6)
+    else:
+        paragraph.paragraph_format.space_before = Pt(10)
+        paragraph.paragraph_format.space_after = Pt(4)
+    paragraph.paragraph_format.line_spacing = 1.0
 
 
 def _format_body_paragraph(paragraph) -> None:
@@ -358,20 +376,21 @@ def _format_body_paragraph(paragraph) -> None:
 
 def _format_label_paragraph(paragraph) -> None:
     paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    paragraph.paragraph_format.space_before = Pt(6)
+    paragraph.paragraph_format.keep_with_next = True
+    paragraph.paragraph_format.space_before = Pt(8)
     paragraph.paragraph_format.space_after = Pt(2)
     paragraph.paragraph_format.line_spacing = 1.0
 
 
 def _format_list_paragraph(paragraph, *, bullet: bool = False) -> None:
     paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    paragraph.paragraph_format.left_indent = Cm(0.7)
+    paragraph.paragraph_format.left_indent = Cm(0.95)
     paragraph.paragraph_format.first_line_indent = Cm(0)
     paragraph.paragraph_format.space_before = Pt(0)
     paragraph.paragraph_format.space_after = Pt(3)
     paragraph.paragraph_format.line_spacing = 1.1
     if bullet:
-        paragraph.paragraph_format.left_indent = Cm(0.9)
+        paragraph.paragraph_format.left_indent = Cm(1.05)
 
 
 def _format_toc_paragraph(paragraph) -> None:
@@ -443,12 +462,11 @@ def _add_summary(document: DocumentObject) -> None:
 
 def _add_section_heading(document: DocumentObject, number: str, title: str) -> None:
     paragraph = document.add_paragraph()
-    styled = _set_paragraph_style(paragraph, "Heading 1")
+    _set_paragraph_style(paragraph, "Heading 1")
     _format_section_paragraph(paragraph, 1)
     _set_outline_level(paragraph, 0)
     run = paragraph.add_run(f"{number}. {title}")
-    if not styled:
-        _apply_run_format(run, size=14, bold=True, color=TITLE_COLOR)
+    _apply_section_heading_format(run)
 
 
 def _add_text_block_list(document: DocumentObject, blocks: list[str]) -> None:
@@ -462,12 +480,11 @@ def _add_text_block_list(document: DocumentObject, blocks: list[str]) -> None:
 
 def _add_activity_subsection(document: DocumentObject, subsection: PopSubsection) -> None:
     heading = document.add_paragraph()
-    styled = _set_paragraph_style(heading, "Heading 2", fallback="Heading 1")
+    _set_paragraph_style(heading, "Heading 2", fallback="Heading 1")
     _format_section_paragraph(heading, 2)
     _set_outline_level(heading, 1)
     run = heading.add_run(f"{subsection.numero} {subsection.titulo}")
-    if not styled:
-        _apply_run_format(run, size=12, bold=True, color=SUBTITLE_COLOR)
+    _apply_subsection_heading_format(run)
 
     _add_labeled_list(document, "Materiais Necessários", subsection.materiais)
     _add_labeled_list(document, "Preparação", subsection.preparacao)
@@ -478,7 +495,7 @@ def _add_activity_subsection(document: DocumentObject, subsection: PopSubsection
         _set_paragraph_style(step_heading, "Normal")
         _format_label_paragraph(step_heading)
         run = step_heading.add_run("Passos Operacionais")
-        _apply_run_format(run, size=11, bold=True, color=SUBTITLE_COLOR)
+        _apply_label_heading_format(run)
 
     for item in subsection.itens:
         paragraph = document.add_paragraph()
@@ -498,12 +515,11 @@ def _add_activity_subsection(document: DocumentObject, subsection: PopSubsection
 
 def _add_rule_subsection(document: DocumentObject, subsection: PopSubsection) -> None:
     heading = document.add_paragraph()
-    styled = _set_paragraph_style(heading, "Heading 2", fallback="Heading 1")
+    _set_paragraph_style(heading, "Heading 2", fallback="Heading 1")
     _format_section_paragraph(heading, 2)
     _set_outline_level(heading, 1)
     run = heading.add_run(f"{subsection.numero} {subsection.titulo}")
-    if not styled:
-        _apply_run_format(run, size=12, bold=True, color=SUBTITLE_COLOR)
+    _apply_subsection_heading_format(run)
     for item in subsection.itens:
         paragraph = document.add_paragraph()
         styled = _set_paragraph_style(paragraph, "List Bullet", fallback="List Paragraph")
@@ -544,7 +560,7 @@ def _add_labeled_list(document: DocumentObject, label: str, items: list[str]) ->
     _set_paragraph_style(paragraph, "Normal")
     _format_label_paragraph(paragraph)
     run = paragraph.add_run(label)
-    _apply_run_format(run, size=11, bold=True, color=SUBTITLE_COLOR)
+    _apply_label_heading_format(run)
     for item in items:
         bullet = document.add_paragraph()
         styled = _set_paragraph_style(bullet, "List Bullet", fallback="List Paragraph")
@@ -699,12 +715,11 @@ def _insert_standard_pop_body_before(anchor, pop: POP) -> None:
 
 def _insert_section_heading_before(anchor, number: str, title: str):
     paragraph = anchor.insert_paragraph_before()
-    styled = _set_paragraph_style(paragraph, "Heading 1")
+    _set_paragraph_style(paragraph, "Heading 1")
     _format_section_paragraph(paragraph, 1)
     _set_outline_level(paragraph, 0)
     run = paragraph.add_run(f"{number}. {title}")
-    if not styled:
-        _apply_run_format(run, size=14, bold=True, color=TITLE_COLOR)
+    _apply_section_heading_format(run)
     return paragraph
 
 
@@ -719,12 +734,11 @@ def _insert_text_block_list_before(anchor, blocks: list[str]) -> None:
 
 def _insert_activity_subsection_before(anchor, subsection: PopSubsection) -> None:
     heading = anchor.insert_paragraph_before()
-    styled = _set_paragraph_style(heading, "Heading 2", fallback="Heading 1")
+    _set_paragraph_style(heading, "Heading 2", fallback="Heading 1")
     _format_section_paragraph(heading, 2)
     _set_outline_level(heading, 1)
     run = heading.add_run(f"{subsection.numero} {subsection.titulo}")
-    if not styled:
-        _apply_run_format(run, size=12, bold=True, color=SUBTITLE_COLOR)
+    _apply_subsection_heading_format(run)
 
     _insert_labeled_list_before(anchor, "Materiais Necessários", subsection.materiais)
     _insert_labeled_list_before(anchor, "Preparação", subsection.preparacao)
@@ -735,9 +749,14 @@ def _insert_activity_subsection_before(anchor, subsection: PopSubsection) -> Non
         _set_paragraph_style(step_heading, "Normal")
         _format_label_paragraph(step_heading)
         run = step_heading.add_run("Passos Operacionais")
-        _apply_run_format(run, size=11, bold=True, color=SUBTITLE_COLOR)
+        _apply_label_heading_format(run)
 
     for item in subsection.itens:
+        paragraph = anchor.insert_paragraph_before()
+        _set_paragraph_style(paragraph, "List Number", fallback="List Paragraph")
+        _format_list_paragraph(paragraph)
+        run = paragraph.add_run(f"{item.numero} {item.descricao}")
+        _apply_run_format(run, size=11)
         if item.observacao:
             observation = anchor.insert_paragraph_before()
             _set_paragraph_style(observation, "Normal")
@@ -746,21 +765,15 @@ def _insert_activity_subsection_before(anchor, subsection: PopSubsection) -> Non
             _apply_run_format(label_run, size=10, bold=True, color=SUBTITLE_COLOR)
             observation_run = observation.add_run(item.observacao)
             _apply_run_format(observation_run, size=10)
-        paragraph = anchor.insert_paragraph_before()
-        _set_paragraph_style(paragraph, "List Number", fallback="List Paragraph")
-        _format_list_paragraph(paragraph)
-        run = paragraph.add_run(f"{item.numero} {item.descricao}")
-        _apply_run_format(run, size=11)
 
 
 def _insert_rule_subsection_before(anchor, subsection: PopSubsection) -> None:
     heading = anchor.insert_paragraph_before()
-    styled = _set_paragraph_style(heading, "Heading 2", fallback="Heading 1")
+    _set_paragraph_style(heading, "Heading 2", fallback="Heading 1")
     _format_section_paragraph(heading, 2)
     _set_outline_level(heading, 1)
     run = heading.add_run(f"{subsection.numero} {subsection.titulo}")
-    if not styled:
-        _apply_run_format(run, size=12, bold=True, color=SUBTITLE_COLOR)
+    _apply_subsection_heading_format(run)
 
     for item in subsection.itens:
         paragraph = anchor.insert_paragraph_before()
@@ -777,7 +790,7 @@ def _insert_labeled_list_before(anchor, label: str, items: list[str]) -> None:
     _set_paragraph_style(paragraph, "Normal")
     _format_label_paragraph(paragraph)
     run = paragraph.add_run(label)
-    _apply_run_format(run, size=11, bold=True, color=SUBTITLE_COLOR)
+    _apply_label_heading_format(run)
     for item in items:
         bullet = anchor.insert_paragraph_before()
         styled = _set_paragraph_style(bullet, "List Bullet", fallback="List Paragraph")
