@@ -3,7 +3,7 @@
 ## Stack atual
 - `FastAPI` para backend web.
 - `SQLAlchemy` para persistencia.
-- `SQLite` por padrao em desenvolvimento, com `DATABASE_URL` pronta para PostgreSQL.
+- `SQLite` por padrao em desenvolvimento, com `D3_DATABASE_URL` pronta para PostgreSQL.
 - `psycopg` ja preparado para conexao com Postgres/Neon.
 
 ## Principais modulos
@@ -11,6 +11,7 @@
 - `conciliador/core/aggregations.py`: regras de conciliacao.
 - `conciliador/core/writer.py`: escrita do Excel final.
 - `conciliador/service.py`: orquestracao da conciliacao.
+- `webapp/dilmaria/`: modulo integrado da DilmarIA com agente de POPs, historico, preview e exportacao `.docx`.
 - `webapp/db.py`: engine e sessao do banco.
 - `webapp/models.py`: tabelas de usuarios e historico.
 - `webapp/security.py`: hash e verificacao de senha.
@@ -27,6 +28,33 @@
 ```
 
 Abra `http://127.0.0.1:8000`.
+
+## Modulo DilmarIA integrado
+- Entrada no menu: `Operacoes > DilmarIA`
+- Rota HTML: `/operacoes/dilmaria`
+- APIs do modulo:
+  - `GET /operacoes/dilmaria/api/health`
+  - `GET /operacoes/dilmaria/api/structures`
+  - `GET /operacoes/dilmaria/api/history`
+  - `GET /operacoes/dilmaria/api/draft`
+  - `POST /operacoes/dilmaria/api/draft`
+  - `DELETE /operacoes/dilmaria/api/draft`
+  - `POST /operacoes/dilmaria/api/preview`
+  - `POST /operacoes/dilmaria/api/run`
+  - `POST /operacoes/dilmaria/api/doc-formatter/run`
+
+Regras da integracao:
+- a DilmarIA usa a sessao e os usuarios do proprio sistema D3
+- o `pop_naturale` permanece com template institucional e logo fixa
+- as demais estruturas permitem logo opcional em `PNG` ou `JPG`
+- historico e revisoes do modulo ficam no banco deste sistema
+- o rascunho do workspace tambem fica salvo no banco por usuario
+- a DilmarIA reutiliza a mesma `OPENAI_API_KEY` do painel D3, sem variavel separada
+
+## Testes
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\test_dilmaria_module.py -q
+```
 
 ## Migrações de banco com Alembic
 Aplicar as migrations existentes:
@@ -52,14 +80,14 @@ $env:D3_BOOTSTRAP_ADMIN_PASSWORD="Admin123!"
 ```
 
 ## Banco de dados
-Localmente, sem `DATABASE_URL`, o sistema usa `app.db`.
+Localmente, sem `D3_DATABASE_URL`, o sistema usa `app.db`.
 
 Para PostgreSQL no futuro:
 ```powershell
-$env:DATABASE_URL="postgresql://usuario:senha@host:5432/database"
+$env:D3_DATABASE_URL="postgresql://usuario:senha@host:5432/database"
 ```
 
-O app converte automaticamente `postgres://` e `postgresql://` para o driver `psycopg`.
+O app prioriza `D3_DATABASE_URL`, aceita `DATABASE_URL` como fallback e converte automaticamente `postgres://` e `postgresql://` para o driver `psycopg`.
 
 ## Inferencia de layout com IA
 O parser continua tentando primeiro o layout conhecido.
@@ -92,11 +120,11 @@ $env:D3_BOOTSTRAP_ADMIN_PASSWORD="Admin123!"
 Os usuarios sao criados apenas por um `admin`.
 
 ## Deploy com Neon + Render + Cloudflare
-1. Crie um banco no Neon.
+1. Crie um banco ou projeto separado no Neon para o Painel D3.
 2. Copie a connection string do Postgres com `sslmode=require`.
 3. No Render, crie o servico web a partir deste repositorio ou use `render.yaml`.
 4. Configure no Render:
-   - `DATABASE_URL`
+   - `D3_DATABASE_URL`
    - `SESSION_SECRET`
    - `SESSION_HTTPS_ONLY=true`
    - `SESSION_SAME_SITE=lax`
@@ -116,6 +144,14 @@ Os usuarios sao criados apenas por um `admin`.
 7. Faça o primeiro deploy.
 8. Entre com o admin bootstrap e crie os demais usuarios.
 9. Se no futuro publicar dominio proprio, defina `SESSION_DOMAIN` com o dominio final.
+
+## Separacao do OpApp
+Se `OpApp` e `painel-d3` usarem a mesma URL do Neon, eles vao compartilhar o mesmo banco.
+
+Para manter cada projeto isolado:
+- configure uma URL exclusiva em `D3_DATABASE_URL` para o Painel D3
+- deixe o `OpApp` apontando para a URL dele
+- se quiser usar o mesmo projeto Neon, prefira bancos separados em vez de misturar tudo no mesmo `public`
 
 ## Health check
 O endpoint de saude para Render e monitoramento e:

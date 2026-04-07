@@ -63,7 +63,11 @@ NAV_ITEMS = {
     ],
     "operacoes": [
         {"id": "dashboard", "label": "Dashboard", "href": "/operacoes/dashboard"},
+        {"id": "clientes", "label": "Clientes", "href": "/operacoes/clientes"},
+        {"id": "pendencias", "label": "Pendencias", "href": "/operacoes/pendencias"},
+        {"id": "financeiro", "label": "Financeiro", "href": "/operacoes/financeiro/configuracoes"},
         {"id": "conciliacao", "label": "Conciliacao", "href": "/operacoes/conciliacao"},
+        {"id": "dilmaria", "label": "DilmarIA", "href": "/operacoes/dilmaria"},
         {"id": "relatorios", "label": "Relatorios", "href": "/operacoes/relatorios"},
         {"id": "configuracoes", "label": "Configuracoes", "href": "/configuracoes"},
     ],

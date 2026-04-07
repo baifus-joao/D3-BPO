@@ -5,6 +5,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from webapp.bpo_models import BPOClient  # noqa: F401
+from webapp.dilmaria.models import DilmariaPopRevision, DilmariaPopRun  # noqa: F401
+from webapp.finance_models import BPOFinancialBankAccount  # noqa: F401
 from webapp.db import Base, DATABASE_URL
 from webapp.models import ExecutionLog, User
 

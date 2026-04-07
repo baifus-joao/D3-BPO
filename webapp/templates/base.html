@@ -12,6 +12,7 @@
         })();
     </script>
     <link rel="stylesheet" href="/static/styles.css?v=20260323-3">
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
     <div class="loading-overlay" id="page-loading" aria-hidden="true">
@@ -137,5 +138,6 @@
             window.setTimeout(hideLoading, 120);
         });
     </script>
+    {% block extra_scripts %}{% endblock %}
 </body>
 </html>

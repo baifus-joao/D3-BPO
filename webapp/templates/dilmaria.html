@@ -1,0 +1,443 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/dilmaria.css?v=20260406-1">
+{% endblock %}
+
+{% block content %}
+<section class="dilmaria-shell">
+    <article class="card dilmaria-hero">
+        <div>
+            <p class="section-kicker">Modulo</p>
+            <h2>DilmarIA</h2>
+            <p>Agentes, rascunho e exportacao em um fluxo unico.</p>
+        </div>
+        <div class="dilmaria-tabbar" role="tablist" aria-label="Navegacao da DilmarIA">
+            <button type="button" class="dilmaria-tab is-active" data-view-target="dashboard">Dashboard</button>
+            <button type="button" class="dilmaria-tab" data-view-target="agents">Agentes</button>
+            <button type="button" class="dilmaria-tab" data-view-target="workspace">POP</button>
+            <button type="button" class="dilmaria-tab" data-view-target="settings">Configuracoes</button>
+        </div>
+    </article>
+
+    <section class="dilmaria-view is-active" data-view="dashboard">
+        <section class="grid two-col">
+            <article class="card">
+                <div class="card-header">
+                    <div>
+                        <p class="section-kicker">Painel</p>
+                        <h2>Operacao dos agentes</h2>
+                    </div>
+                </div>
+                <p class="page-subtitle">Acompanhe o modulo e abra rapidamente o agente de POPs.</p>
+                <div class="header-actions">
+                    <button type="button" class="button-link" data-go-workspace="true">Abrir POP</button>
+                    <button type="button" class="ghost-button" data-view-target="agents">Ver agentes</button>
+                </div>
+            </article>
+            <article class="card">
+                <div class="card-header">
+                    <div>
+                        <p class="section-kicker">Atualizacoes</p>
+                        <h2>Proximos passos</h2>
+                    </div>
+                </div>
+                <ul id="upcoming-events" class="plain-list"></ul>
+            </article>
+        </section>
+
+        <section class="grid four-col dilmaria-metrics">
+            <article class="card metric-card">
+                <span class="metric-label">Modulos</span>
+                <strong id="modules-active-count">0</strong>
+            </article>
+            <article class="card metric-card">
+                <span class="metric-label">Agentes</span>
+                <strong id="agents-total-count">0</strong>
+            </article>
+            <article class="card metric-card">
+                <span class="metric-label">Perfil</span>
+                <strong id="profile-name">-</strong>
+            </article>
+            <article class="card metric-card">
+                <span class="metric-label">Status</span>
+                <strong id="system-health">-</strong>
+            </article>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <p class="section-kicker">Agentes</p>
+                    <h2>Ativos</h2>
+                </div>
+            </div>
+            <div id="dashboard-agent-grid" class="dilmaria-agent-grid compact"></div>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <p class="section-kicker">Historico</p>
+                    <h2>POPs recentes</h2>
+                </div>
+                <div class="inline-notes">
+                    <span id="history-summary">0 execucoes</span>
+                    <span id="history-last">Sem exportacoes</span>
+                </div>
+            </div>
+            <div class="table-shell dilmaria-history-head">
+                <div class="table-row dilmaria-history-grid is-head">
+                    <span>Codigo</span>
+                    <span>Titulo</span>
+                    <span>Rev</span>
+                    <span>Exportado</span>
+                </div>
+            </div>
+            <div id="history-list" class="table-shell"></div>
+            <p id="history-empty" class="empty-state" hidden>Nenhum POP exportado.</p>
+        </section>
+    </section>
+
+    <section class="dilmaria-view" data-view="agents">
+        <article class="card">
+            <div class="card-header">
+                <div>
+                    <p class="section-kicker">Catalogo</p>
+                    <h2>Agentes</h2>
+                </div>
+            </div>
+            <div id="agent-grid" class="dilmaria-agent-grid"></div>
+        </article>
+    </section>
+
+    <section class="dilmaria-view" data-view="workspace">
+        <section class="grid two-col dilmaria-workspace-grid">
+            <aside class="dilmaria-side-stack">
+                <article class="card">
+                    <p class="section-kicker">Agente ativo</p>
+                    <h2 id="workspace-agent-name">Agente de POPs</h2>
+                    <p id="workspace-agent-description" class="page-subtitle">Gera POPs em Word.</p>
+                    <div class="header-actions">
+                        <span id="workspace-agent-status" class="status-badge status-success">Ativo</span>
+                        <span id="workspace-agent-tag" class="context-chip">Producao</span>
+                    </div>
+                </article>
+
+                <article class="card">
+                    <p class="section-kicker">Estrutura</p>
+                    <h2 id="workspace-structure-name">Selecione uma estrutura</h2>
+                    <p id="workspace-structure-summary" class="page-subtitle">Resumo da estrutura.</p>
+                    <ul id="workspace-structure-highlights" class="plain-list"></ul>
+                </article>
+            </aside>
+
+            <div class="dilmaria-main-stack">
+                <form id="pop-form" class="form" novalidate>
+                    <article class="card">
+                        <div class="card-header">
+                            <div>
+                                <p class="section-kicker">1</p>
+                                <h2>Estrutura</h2>
+                            </div>
+                        </div>
+                        <div id="structure-list" class="dilmaria-structure-grid"></div>
+                        <article id="structure-details" class="dilmaria-details-card" hidden>
+                            <h3 id="details-name"></h3>
+                            <p id="details-summary" class="page-subtitle"></p>
+                            <p id="details-description" class="page-subtitle"></p>
+                            <div class="grid three-col">
+                                <div>
+                                    <h4>Melhor uso</h4>
+                                    <ul id="details-best-for" class="plain-list"></ul>
+                                </div>
+                                <div>
+                                    <h4>Secoes</h4>
+                                    <ul id="details-sections" class="plain-list"></ul>
+                                </div>
+                                <div>
+                                    <h4>Atividades</h4>
+                                    <ul id="details-activities" class="plain-list"></ul>
+                                </div>
+                            </div>
+                        </article>
+                    </article>
+
+                    <article class="card">
+                        <div class="card-header">
+                            <div>
+                                <p class="section-kicker">2</p>
+                                <h2>Modo</h2>
+                            </div>
+                        </div>
+                        <div class="grid two-col">
+                            <button type="button" class="dilmaria-choice selected" data-mode="express">
+                                <strong>Express</strong>
+                                <span>Contexto livre.</span>
+                            </button>
+                            <button type="button" class="dilmaria-choice" data-mode="advanced">
+                                <strong>Avancado</strong>
+                                <span>Mais controle.</span>
+                            </button>
+                        </div>
+                    </article>
+
+                    <article class="card">
+                        <div class="card-header">
+                            <div>
+                                <p class="section-kicker">3</p>
+                                <h2>Dados</h2>
+                            </div>
+                        </div>
+                        <div class="grid two-col">
+                            <label class="field">
+                                <span>Titulo do POP</span>
+                                <input id="titulo" type="text" required>
+                            </label>
+                            <label class="field">
+                                <span>Codigo do POP</span>
+                                <input id="codigo" type="text" placeholder="PO-LCABR-005" required>
+                            </label>
+                            <label class="field">
+                                <span>Data do documento</span>
+                                <input id="data" type="date" required>
+                            </label>
+                            <label class="field">
+                                <span>Revisao</span>
+                                <input type="text" value="Controlada automaticamente" disabled>
+                            </label>
+                            <label class="field">
+                                <span>Responsavel</span>
+                                <input id="nome-responsavel" type="text" required>
+                            </label>
+                            <label class="field">
+                                <span>Local</span>
+                                <input id="termo-local" type="text" required>
+                            </label>
+                            <label class="field">
+                                <span>Elaborado por</span>
+                                <input id="elaborado-por" type="text" required>
+                            </label>
+                            <label class="field">
+                                <span>Aprovado por</span>
+                                <input id="aprovado-por" type="text" required>
+                            </label>
+                            <label class="field">
+                                <span>Data do termo</span>
+                                <input id="termo-data" type="date" required>
+                            </label>
+                        </div>
+                        <label class="field">
+                            <span>Declaracao</span>
+                            <textarea id="declaracao" rows="3">Declaro que li, compreendi e me responsabilizo pelo cumprimento integral deste Procedimento Operacional Padrao.</textarea>
+                        </label>
+
+                        <div id="custom-logo-section" class="dilmaria-logo-box" hidden>
+                            <div class="grid two-col">
+                                <div>
+                                    <span class="metric-label">Formato</span>
+                                    <p id="logo-guidance-formats" class="page-subtitle">PNG, JPG</p>
+                                </div>
+                                <div>
+                                    <span class="metric-label">Tamanho recomendado</span>
+                                    <p id="logo-guidance-size" class="page-subtitle">1200 x 400 px</p>
+                                </div>
+                            </div>
+                            <label class="field">
+                                <span>Logo</span>
+                                <input id="custom-logo-input" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg">
+                            </label>
+                            <p id="logo-guidance-help" class="page-subtitle">Use preferencialmente PNG horizontal com fundo transparente.</p>
+                            <div class="header-actions">
+                                <span id="logo-file-name" class="page-subtitle">Nenhuma logo selecionada.</span>
+                                <button id="clear-logo-button" type="button" class="ghost-button">Remover logo</button>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article id="express-section" class="card">
+                        <div class="card-header">
+                            <div>
+                                <p class="section-kicker">4</p>
+                                <h2>Contexto</h2>
+                            </div>
+                        </div>
+                        <label class="field">
+                            <span>Explique o processo</span>
+                            <textarea id="raw-context" rows="8" placeholder="Ex.: Apos cada atendimento, a equipe organiza a sala, confere materiais e registra o checklist."></textarea>
+                        </label>
+                    </article>
+
+                    <article id="advanced-section" class="card" hidden>
+                        <div class="card-header">
+                            <div>
+                                <p class="section-kicker">4</p>
+                                <h2>Inputs avancados</h2>
+                            </div>
+                        </div>
+                        <div id="questionnaire" class="form"></div>
+                    </article>
+
+                    <div class="header-actions">
+                        <button id="submit-button" type="submit" class="button-link">Gerar rascunho</button>
+                        <p id="message" class="page-subtitle" aria-live="polite"></p>
+                    </div>
+                    <p id="autosave-status" class="page-subtitle">Sem rascunho salvo.</p>
+                </form>
+
+                <section id="draft-section" class="card" hidden>
+                    <div class="card-header">
+                        <div>
+                            <p class="section-kicker">Rascunho</p>
+                            <h2>Revisao antes da exportacao</h2>
+                        </div>
+                        <span id="draft-status" class="status-badge status-warning">Aguardando</span>
+                    </div>
+
+                    <article id="refined-section" class="dilmaria-subcard" hidden>
+                        <div class="card-header">
+                            <div>
+                                <p class="section-kicker">Base</p>
+                                <h3>Contexto refinado</h3>
+                            </div>
+                        </div>
+                        <div id="refined-answers-grid" class="grid two-col"></div>
+                    </article>
+
+                    <article class="dilmaria-subcard">
+                        <div class="card-header">
+                            <div>
+                                <p class="section-kicker">Conteudo</p>
+                                <h3>Campos editaveis</h3>
+                            </div>
+                        </div>
+                        <div class="grid two-col">
+                            <label class="field">
+                                <span>Objetivo</span>
+                                <textarea id="draft-objetivo" rows="4"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>Documentos de referencia</span>
+                                <textarea id="draft-documentos-referencia" rows="4"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>Local de aplicacao</span>
+                                <textarea id="draft-local-aplicacao" rows="3"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>Responsabilidade / execucao</span>
+                                <textarea id="draft-responsabilidade-execucao" rows="3"></textarea>
+                            </label>
+                        </div>
+                        <label class="field">
+                            <span>Definicoes e siglas</span>
+                            <textarea id="draft-definicoes-siglas" rows="5"></textarea>
+                        </label>
+                    </article>
+
+                    <article class="dilmaria-subcard">
+                        <div class="card-header">
+                            <div>
+                                <p class="section-kicker">Atividades</p>
+                                <h3>Secao 6</h3>
+                            </div>
+                        </div>
+                        <div id="draft-activities" class="form"></div>
+                    </article>
+
+                    <article class="dilmaria-subcard">
+                        <div class="card-header">
+                            <div>
+                                <p class="section-kicker">Controle</p>
+                                <h3>Secao 7</h3>
+                            </div>
+                        </div>
+                        <div class="grid two-col">
+                            <label class="field">
+                                <span>Criterios de avaliacao</span>
+                                <textarea id="draft-criterios-avaliacao" rows="4"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>Boas praticas</span>
+                                <textarea id="draft-boas-praticas" rows="4"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>Erros criticos</span>
+                                <textarea id="draft-erros-criticos" rows="4"></textarea>
+                            </label>
+                        </div>
+                    </article>
+
+                    <div class="header-actions">
+                        <button id="export-button" type="button" class="button-link" disabled>Exportar DOCX</button>
+                        <p id="draft-message" class="page-subtitle" aria-live="polite"></p>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </section>
+
+    <section class="dilmaria-view" data-view="settings">
+        <section class="grid two-col">
+            <article class="card">
+                <div class="card-header">
+                    <div>
+                        <p class="section-kicker">Conta</p>
+                        <h2>Usuario atual</h2>
+                    </div>
+                </div>
+                <div class="list-stack">
+                    <div class="list-item"><strong id="settings-user-name">-</strong><span>Nome</span></div>
+                    <div class="list-item"><strong id="settings-user-email">-</strong><span>Email</span></div>
+                    <div class="list-item"><strong id="settings-user-role">-</strong><span>Perfil</span></div>
+                </div>
+                <div class="header-actions">
+                    <a id="settings-account-link" class="button-link" href="/configuracoes">Abrir configuracoes</a>
+                </div>
+            </article>
+            <article class="card">
+                <div class="card-header">
+                    <div>
+                        <p class="section-kicker">Integracao</p>
+                        <h2>Gestao reaproveitada</h2>
+                    </div>
+                </div>
+                <p class="page-subtitle">A conta, as permissoes e a administracao de usuarios seguem o sistema principal.</p>
+                <div class="list-stack">
+                    <div class="list-item"><strong>OpenAI</strong><span>Usa a mesma OPENAI_API_KEY do painel D3.</span></div>
+                </div>
+                <div class="header-actions">
+                    <a id="settings-hub-link" class="ghost-button" href="/hub">Voltar ao hub</a>
+                </div>
+            </article>
+        </section>
+    </section>
+</section>
+
+<template id="question-template">
+    <label class="field dilmaria-question-card">
+        <span class="question-label"></span>
+        <small class="page-subtitle question-help"></small>
+        <textarea class="question-input" rows="4"></textarea>
+    </label>
+</template>
+
+<template id="agent-card-template">
+    <article class="card dilmaria-agent-card">
+        <div class="header-actions">
+            <span class="status-badge"></span>
+            <span class="context-chip agent-tag"></span>
+        </div>
+        <h3 class="agent-name"></h3>
+        <p class="page-subtitle agent-description"></p>
+        <button class="ghost-button agent-open-button" type="button">Abrir</button>
+    </article>
+</template>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+window.DILMARIA_BOOTSTRAP = {{ dilmaria_bootstrap | tojson }};
+</script>
+<script src="/static/dilmaria.js?v=20260406-1"></script>
+{% endblock %}

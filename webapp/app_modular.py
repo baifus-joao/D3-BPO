@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from io import BytesIO
 import logging
 import os
 import shutil
@@ -15,7 +16,7 @@ from os import getenv
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, File, Form, Query, Request, UploadFile, status
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -24,11 +25,69 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.middleware.sessions import SessionMiddleware
 
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent
+
+
+def _load_local_env() -> None:
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() and key.strip() not in os.environ:
+            os.environ[key.strip()] = value.strip().strip('"').strip("'")
+
+
+_load_local_env()
+
 from conciliador.core.ai_layout import is_ai_layout_enabled
 from conciliador.service import ConciliationUserError, run_conciliation
 
+from .bpo_models import BPOClient, BPOConciliationRun, BPOTask
+from .finance_models import BPOFinancialBankAccount  # noqa: F401
+from .bpo_services import (
+    archive_client,
+    create_client,
+    create_client_contact,
+    create_default_task_for_conciliation,
+    create_task,
+    delete_task,
+    load_client_detail,
+    load_client_open_tasks_for_conciliation,
+    load_pending_items,
+    load_client_reference_lists,
+    load_clients_overview,
+    load_operations_queue,
+    persist_conciliation_run,
+    seed_bpo_data,
+    update_client,
+    update_pending_item_status,
+    update_task,
+    update_task_status,
+)
+from .finance_services import (
+    create_financial_bank_account,
+    create_financial_category,
+    create_financial_cost_center,
+    create_financial_payment_method,
+    create_financial_supplier,
+    load_finance_setup_overview,
+    load_finance_setup_reference_lists,
+)
 from .cashflow import build_cashflow_form_state, export_cashflow_workbook, load_cashflow_overview, load_cashflow_reference_lists, parse_date_input, safe_decimal
-from .db import Base, DATABASE_URL, SessionLocal, engine
+from .dilmaria.doc_formatter_schema import DocFormatterPayload
+from .dilmaria.doc_formatter_service import run_doc_formatter_agent
+from .dilmaria.draft_service import PopDraftService
+from .dilmaria.exceptions import AgentExecutionError
+from .dilmaria.history_service import PopHistoryService as DilmariaPopHistoryService
+from .dilmaria.models import DilmariaPopDraft, DilmariaPopRevision, DilmariaPopRun  # noqa: F401
+from .dilmaria.pop_schema import GuidedPopRequest, PopRequest
+from .dilmaria.pop_service import preview_pop_generator_agent, run_pop_generator_agent
+from .dilmaria.pop_structures import list_pop_structures
 from .erp import (
     CONTEXTS,
     build_contexts,
@@ -51,26 +110,10 @@ from .models import BankAccount, FinancialCategory, FinancialTransaction, Paymen
 from .security import hash_password, verify_password
 
 
-BASE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BASE_DIR.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 DOWNLOADS: dict[str, dict[str, object]] = {}
 
-
-def _load_local_env() -> None:
-    env_path = PROJECT_ROOT / ".env"
-    if not env_path.exists():
-        return
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        if key.strip() and key.strip() not in os.environ:
-            os.environ[key.strip()] = value.strip().strip('"').strip("'")
-
-
-_load_local_env()
+from .db import Base, DATABASE_URL, SessionLocal, engine
 
 MAX_UPLOAD_SIZE = 15 * 1024 * 1024
 PROCESSING_TIMEOUT_SECONDS = 60
@@ -149,6 +192,12 @@ async def _validate_csrf(request: Request) -> None:
         raise ConciliationUserError("Sessão inválida ou expirada. Atualize a página e tente novamente.")
 
 
+def _validate_csrf_header(request: Request) -> None:
+    token = request.headers.get("X-CSRF-Token", "")
+    if str(token) != str(request.session.get("csrf_token", "")):
+        raise ConciliationUserError("Sessão inválida ou expirada. Atualize a página e tente novamente.")
+
+
 def _require_user(request: Request, db: Session) -> User | None:
     user_id = request.session.get("user_id")
     if not user_id:
@@ -201,6 +250,10 @@ def _cleanup_expired_downloads() -> None:
             DOWNLOADS.pop(token, None)
 
 
+def _cleanup_tempdir(tempdir: str) -> None:
+    shutil.rmtree(tempdir, ignore_errors=True)
+
+
 def _build_download_name() -> str:
     return f"conciliacao_{datetime.now().strftime('%Y-%m-%d_%H%M')}.xlsx"
 
@@ -228,8 +281,88 @@ def _normalize_text_input(value: str | None) -> str:
     return text
 
 
+def _parse_required_date(value: str | None, label: str) -> date:
+    parsed = parse_date_input(value)
+    if not parsed:
+        raise ConciliationUserError(f"Informe {label} para registrar a rotina operacional.")
+    return parsed
+
+
+def _normalize_redirect_target(value: str | None, default: str = "/operacoes/dashboard") -> str:
+    target = str(value or "").strip()
+    if not target.startswith("/"):
+        return default
+    return target
+
+
+def _load_recent_conciliation_runs(db: Session, limit: int = 12) -> list[dict[str, object]]:
+    runs = db.scalars(
+        select(BPOConciliationRun)
+        .where(BPOConciliationRun.status == "concluida")
+        .order_by(BPOConciliationRun.created_at.desc())
+        .limit(limit)
+    ).all()
+    items = []
+    for run in runs:
+        client = db.get(BPOClient, run.client_id)
+        items.append(
+            {
+                "id": run.id,
+                "client_name": (client.trade_name or client.legal_name) if client else "Cliente removido",
+                "period": f"{run.period_start.strftime('%d/%m/%Y')} ate {run.period_end.strftime('%d/%m/%Y')}",
+                "status": run.status,
+                "status_class": "success" if run.status == "concluida" else "warning",
+                "divergences": run.total_divergencias,
+                "executed_at": run.created_at.strftime("%d/%m/%Y %H:%M"),
+            }
+        )
+    return items
+
+
+def _render_conciliation_page(
+    request: Request,
+    user: User,
+    db: Session,
+    *,
+    error: str | None = None,
+    submitted_names: dict[str, str] | None = None,
+    selected_client_id: int | None = None,
+    selected_task_id: int | None = None,
+    period_start: str = "",
+    period_end: str = "",
+):
+    refs = load_client_reference_lists(db)
+    tasks = load_client_open_tasks_for_conciliation(db, selected_client_id)
+    return _render(
+        request,
+        user,
+        "conciliacao.html",
+        "operacoes",
+        "conciliacao",
+        "Conciliação de clientes",
+        "Ferramenta operacional para cruzar relatórios, registrar competência e amarrar a execução ao cliente.",
+        {
+            "history": load_history(db),
+            "recent_runs": _load_recent_conciliation_runs(db),
+            "submitted_names": submitted_names or {},
+            "error": error,
+            "selected_client_id": selected_client_id,
+            "selected_task_id": selected_task_id,
+            "selected_period_start": period_start,
+            "selected_period_end": period_end,
+            "clients": refs["clients"],
+            "open_tasks": tasks,
+        },
+    )
+
+
 def _build_query_string(params: dict[str, object]) -> str:
     return urlencode({key: value for key, value in params.items() if value not in (None, "")})
+
+
+def _finance_settings_url(client_id: int | None = None) -> str:
+    query = _build_query_string({"client_id": client_id})
+    return f"/operacoes/financeiro/configuracoes{f'?{query}' if query else ''}"
 
 
 def _file_sha256(path: Path) -> str:
@@ -278,6 +411,7 @@ def _init_db() -> None:
             db.commit()
         seed_reference_data(db)
         seed_cashflow_data(db)
+        seed_bpo_data(db)
 
 
 @app.on_event("startup")
@@ -418,35 +552,236 @@ async def gestao_dashboard(request: Request):
 
 
 @app.get("/operacoes/dashboard", response_class=HTMLResponse)
-async def operacoes_dashboard(request: Request):
+async def operacoes_dashboard(
+    request: Request,
+    client_id: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+    assigned_user_id: str | None = Query(default=None),
+):
     with _get_db() as db:
         user = _require_user(request, db)
         if not user:
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-        history = load_history(db, limit=6)
+        refs = load_client_reference_lists(db)
+        queue = load_operations_queue(
+            db,
+            filters={
+                "client_id": _parse_optional_int(client_id),
+                "status": (status_value or "").strip(),
+                "assigned_user_id": _parse_optional_int(assigned_user_id),
+            },
+        )
         return _render(
             request,
             user,
-            "dashboard.html",
+            "operations_queue.html",
             "operacoes",
             "dashboard",
             "D3 Operações",
-            "Ferramentas internas usadas pelos colaboradores para executar serviços financeiros para os clientes da D3.",
+            "Fila operacional da carteira, com tarefas, clientes e últimas conciliações do BPO.",
+            {**queue, **refs},
+        )
+
+
+@app.get("/operacoes/dilmaria", response_class=HTMLResponse)
+async def dilmaria_page(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        if not has_permission(user, "read"):
+            return RedirectResponse("/operacoes/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+        return _render(
+            request,
+            user,
+            "dilmaria.html",
+            "operacoes",
+            "dilmaria",
+            "DilmarIA",
+            "Modulo de agentes com foco em POPs e automacao documental.",
             {
-                "history": history,
-                "upcoming": [],
-                "reference": load_reference_lists(db),
-                "dashboard_context": {
-                    "kicker": "Ferramentas operacionais",
-                    "headline": "Execução dos serviços dos clientes em área própria",
-                    "description": "Conciliação e futuras rotinas operacionais ficam agrupadas como instrumentos de trabalho da equipe que atende os clientes.",
-                    "module_count": 2,
-                    "module_label": "Ferramentas ativas",
-                    "secondary_label": "Conciliações recentes",
-                    "secondary_value": len(history),
-                    "history_title": "Histórico operacional",
-                },
+                "dilmaria_bootstrap": {
+                    "current_user": serialize_user(user),
+                    "csrf_token": _get_csrf_token(request),
+                    "settings_url": "/configuracoes",
+                    "hub_url": "/hub",
+                    "uses_host_openai_env": True,
+                }
             },
+        )
+
+
+@app.get("/operacoes/dilmaria/api/health")
+async def dilmaria_health(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
+        return {"status": "ok"}
+
+
+@app.get("/operacoes/dilmaria/api/structures")
+async def dilmaria_structures(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
+        return [item.model_dump(mode="json") for item in list_pop_structures()]
+
+
+@app.get("/operacoes/dilmaria/api/history")
+async def dilmaria_history(request: Request, limit: int = Query(default=8)):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
+        safe_limit = max(1, min(limit, 20))
+        history = DilmariaPopHistoryService().build_history_summary(db, limit=safe_limit)
+        return history.model_dump(mode="json")
+
+
+@app.get("/operacoes/dilmaria/api/draft")
+async def dilmaria_draft(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
+        draft = PopDraftService().load_draft(db, user.id)
+        if draft is None:
+            return {"draft": None}
+        return {"draft": draft.model_dump(mode="json")}
+
+
+@app.post("/operacoes/dilmaria/api/draft")
+async def dilmaria_save_draft(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
+        if not has_permission(user, "edit"):
+            raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
+        try:
+            _validate_csrf_header(request)
+            payload = await request.json()
+            saved = PopDraftService().save_draft(db, user.id, payload)
+            return saved.model_dump(mode="json")
+        except ConciliationUserError as exc:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ValueError as exc:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/operacoes/dilmaria/api/draft")
+async def dilmaria_clear_draft(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
+        if not has_permission(user, "edit"):
+            raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
+        try:
+            _validate_csrf_header(request)
+            cleared = PopDraftService().clear_draft(db, user.id)
+            return {"cleared": cleared}
+        except ConciliationUserError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/operacoes/dilmaria/api/preview")
+async def dilmaria_preview(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
+        if not has_permission(user, "edit"):
+            raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
+        try:
+            _validate_csrf_header(request)
+            payload = await request.json()
+            preview = await preview_pop_generator_agent(payload)
+            return preview.model_dump(mode="json")
+        except ConciliationUserError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except AgentExecutionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/operacoes/dilmaria/api/run")
+async def dilmaria_run(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
+        if not has_permission(user, "edit"):
+            raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
+        try:
+            _validate_csrf_header(request)
+            payload = PopRequest.model_validate(await request.json()).model_dump(mode="python")
+            result = await run_pop_generator_agent(db, user.id, payload)
+        except ConciliationUserError as exc:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except AgentExecutionError as exc:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception:
+            db.rollback()
+            raise
+        PopDraftService().clear_draft(db, user.id)
+
+        output_name = f"{result.pop.file_stub}.docx"
+        return StreamingResponse(
+            BytesIO(result.document_bytes),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{output_name}"',
+                "X-POP-Code": result.pop.codigo,
+                "X-POP-Revision": result.pop.revisao,
+            },
+        )
+
+
+@app.post("/operacoes/dilmaria/api/doc-formatter/run")
+async def dilmaria_doc_formatter_run(
+    request: Request,
+    template: UploadFile = File(...),
+    text: str = Form(...),
+    mode: str = Form("placeholder"),
+    csrf_token: str = Form(default=""),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
+        if not has_permission(user, "edit"):
+            raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
+        if str(csrf_token) != str(request.session.get("csrf_token", "")):
+            raise HTTPException(status_code=400, detail="Sessao invalida ou expirada.")
+        if not template.filename or not template.filename.lower().endswith(".docx"):
+            raise HTTPException(status_code=400, detail="Apenas arquivos .docx sao permitidos.")
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="O texto para formatacao e obrigatorio.")
+
+        payload = DocFormatterPayload(
+            filename=template.filename,
+            content_type=template.content_type,
+            template_bytes=await template.read(),
+            text=text,
+            mode=mode,
+        )
+        try:
+            result = await run_doc_formatter_agent(payload.model_dump(mode="python"))
+        except AgentExecutionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        filename = template.filename.rsplit(".", 1)[0]
+        output_name = f"{filename}-formatado.docx"
+        return StreamingResponse(
+            BytesIO(result.document_bytes),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{output_name}"'},
         )
 
 
@@ -456,20 +791,126 @@ async def conciliacao_legacy():
 
 
 @app.get("/operacoes/conciliacao", response_class=HTMLResponse)
-async def conciliacao_page(request: Request):
+async def conciliacao_page(request: Request, client_id: str | None = Query(default=None)):
     with _get_db() as db:
         user = _require_user(request, db)
         if not user:
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        return _render_conciliation_page(request, user, db, selected_client_id=_parse_optional_int(client_id))
+
+
+@app.get("/operacoes/clientes", response_class=HTMLResponse)
+async def clients_page(
+    request: Request,
+    status_value: str | None = Query(default=None, alias="status"),
+    responsible_user_id: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        refs = load_client_reference_lists(db)
         return _render(
             request,
             user,
-            "conciliacao.html",
+            "clients.html",
             "operacoes",
-            "conciliacao",
-            "Conciliação de clientes",
-            "Ferramenta operacional para cruzar relatórios de vendas e recebimentos das maquininhas dos clientes.",
-            {"history": load_history(db), "submitted_names": {}, "error": None},
+            "clientes",
+            "Carteira de clientes",
+            "Base operacional do BPO com responsáveis, contatos e visibilidade da carga de trabalho.",
+            {
+                **load_clients_overview(
+                    db,
+                    filters={
+                        "status": (status_value or "").strip(),
+                        "responsible_user_id": _parse_optional_int(responsible_user_id),
+                        "search": search or "",
+                    },
+                ),
+                **refs,
+            },
+        )
+
+
+@app.get("/operacoes/financeiro/configuracoes", response_class=HTMLResponse)
+async def finance_settings_page(request: Request, client_id: str | None = Query(default=None)):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        refs = load_finance_setup_reference_lists(db)
+        selected_client_id = _parse_optional_int(client_id)
+        if selected_client_id is None and refs["finance_clients"]:
+            active_client = next((item for item in refs["finance_clients"] if item["status"] != "inativo"), None)
+            selected_client_id = (active_client or refs["finance_clients"][0])["id"]
+        return _render(
+            request,
+            user,
+            "finance_settings.html",
+            "operacoes",
+            "financeiro",
+            "Configuracoes financeiras",
+            "Estruture o cadastro financeiro de cada cliente antes de entrar em contas a pagar e receber.",
+            {
+                **refs,
+                **load_finance_setup_overview(db, client_id=selected_client_id),
+            },
+        )
+
+
+@app.get("/operacoes/clientes/{client_id}", response_class=HTMLResponse)
+async def client_detail_page(request: Request, client_id: int):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        detail = load_client_detail(db, client_id)
+        if not detail:
+            _set_flash(request, "Cliente não encontrado.", "error")
+            return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+        refs = load_client_reference_lists(db)
+        return _render(
+            request,
+            user,
+            "client_detail.html",
+            "operacoes",
+            "clientes",
+            detail["client"]["trade_name"],
+            "Histórico operacional, tarefas, contatos e conciliações deste cliente.",
+            {**detail, **refs},
+        )
+
+
+@app.get("/operacoes/pendencias", response_class=HTMLResponse)
+async def pending_items_page(
+    request: Request,
+    client_id: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+    item_type: str | None = Query(default=None),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        refs = load_client_reference_lists(db)
+        data = load_pending_items(
+            db,
+            filters={
+                "client_id": _parse_optional_int(client_id),
+                "status": (status_value or "").strip(),
+                "item_type": item_type or "",
+            },
+        )
+        return _render(
+            request,
+            user,
+            "pending_items.html",
+            "operacoes",
+            "pendencias",
+            "Pendências operacionais",
+            "Acompanhamento das divergências abertas pela conciliação, com status e contexto por cliente.",
+            {**data, **refs},
         )
 
 
@@ -593,6 +1034,384 @@ async def settings_page(request: Request):
         return _render(request, user, "settings.html", "hub", "configuracoes", "Configurações do ambiente", "Perfil do usuário, permissões e administração compartilhada entre D3 Gestão e D3 Operações.", {"users": load_users(db) if has_permission(user, "manage_users") else [], "history": load_history(db, limit=20)})
 
 
+@app.post("/operacoes/clientes")
+async def create_bpo_client(
+    request: Request,
+    legal_name: str = Form(...),
+    trade_name: str = Form(default=""),
+    document: str = Form(default=""),
+    segment: str = Form(default=""),
+    responsible_user_id: str | None = Form(default=None),
+    notes: str = Form(default=""),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        create_client(
+            db,
+            legal_name=legal_name,
+            trade_name=trade_name or legal_name,
+            document=document,
+            segment=segment,
+            responsible_user_id=_parse_optional_int(responsible_user_id),
+            notes=notes,
+        )
+        _set_flash(request, "Cliente da carteira cadastrado.", "success")
+        return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/clientes/{client_id}/atualizar")
+async def update_bpo_client(
+    request: Request,
+    client_id: int,
+    legal_name: str = Form(...),
+    trade_name: str = Form(default=""),
+    document: str = Form(default=""),
+    segment: str = Form(default=""),
+    responsible_user_id: str | None = Form(default=None),
+    notes: str = Form(default=""),
+    status_value: str = Form(default="ativo", alias="status"),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        client = update_client(
+            db,
+            client_id=client_id,
+            legal_name=legal_name,
+            trade_name=trade_name,
+            document=document,
+            segment=segment,
+            responsible_user_id=_parse_optional_int(responsible_user_id),
+            notes=notes,
+            status=status_value,
+        )
+        if not client:
+            _set_flash(request, "Cliente não encontrado.", "error")
+            return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+        _set_flash(request, "Cliente atualizado.", "success")
+        return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/clientes/{client_id}/arquivar")
+async def archive_bpo_client(request: Request, client_id: int):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        client = archive_client(db, client_id=client_id)
+        if not client:
+            _set_flash(request, "Cliente não encontrado.", "error")
+            return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+        _set_flash(request, "Cliente arquivado na carteira.", "success")
+        return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/financeiro/contas-bancarias")
+async def create_financial_bank_account_entry(
+    request: Request,
+    client_id: str = Form(...),
+    bank_name: str = Form(...),
+    account_name: str = Form(...),
+    agency: str = Form(default=""),
+    account_number: str = Form(default=""),
+    pix_key: str = Form(default=""),
+    initial_balance: str = Form(default="0"),
+):
+    selected_client_id = _parse_optional_int(client_id)
+    target_url = _finance_settings_url(selected_client_id)
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(target_url, status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        try:
+            if selected_client_id is None:
+                raise ValueError("Selecione um cliente para cadastrar a conta bancaria.")
+            create_financial_bank_account(
+                db,
+                client_id=selected_client_id,
+                bank_name=bank_name,
+                account_name=account_name,
+                agency=agency,
+                account_number=account_number,
+                pix_key=pix_key,
+                initial_balance=safe_decimal(initial_balance),
+            )
+            _set_flash(request, "Conta bancaria cadastrada.", "success")
+        except ValueError as exc:
+            _set_flash(request, str(exc), "error")
+        return RedirectResponse(target_url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/financeiro/categorias")
+async def create_financial_category_entry(
+    request: Request,
+    client_id: str = Form(...),
+    name: str = Form(...),
+    kind: str = Form(default="saida"),
+    parent_id: str | None = Form(default=None),
+):
+    selected_client_id = _parse_optional_int(client_id)
+    target_url = _finance_settings_url(selected_client_id)
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(target_url, status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        try:
+            if selected_client_id is None:
+                raise ValueError("Selecione um cliente para cadastrar a categoria.")
+            create_financial_category(
+                db,
+                client_id=selected_client_id,
+                name=name,
+                kind=kind,
+                parent_id=_parse_optional_int(parent_id),
+            )
+            _set_flash(request, "Categoria financeira cadastrada.", "success")
+        except ValueError as exc:
+            _set_flash(request, str(exc), "error")
+        return RedirectResponse(target_url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/financeiro/centros-custo")
+async def create_financial_cost_center_entry(
+    request: Request,
+    client_id: str = Form(...),
+    name: str = Form(...),
+):
+    selected_client_id = _parse_optional_int(client_id)
+    target_url = _finance_settings_url(selected_client_id)
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(target_url, status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        try:
+            if selected_client_id is None:
+                raise ValueError("Selecione um cliente para cadastrar o centro de custo.")
+            create_financial_cost_center(db, client_id=selected_client_id, name=name)
+            _set_flash(request, "Centro de custo cadastrado.", "success")
+        except ValueError as exc:
+            _set_flash(request, str(exc), "error")
+        return RedirectResponse(target_url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/financeiro/fornecedores")
+async def create_financial_supplier_entry(
+    request: Request,
+    client_id: str = Form(...),
+    name: str = Form(...),
+    document: str = Form(default=""),
+    email: str = Form(default=""),
+    phone: str = Form(default=""),
+):
+    selected_client_id = _parse_optional_int(client_id)
+    target_url = _finance_settings_url(selected_client_id)
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(target_url, status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        try:
+            if selected_client_id is None:
+                raise ValueError("Selecione um cliente para cadastrar o fornecedor.")
+            create_financial_supplier(
+                db,
+                client_id=selected_client_id,
+                name=name,
+                document=document,
+                email=email,
+                phone=phone,
+            )
+            _set_flash(request, "Fornecedor cadastrado.", "success")
+        except ValueError as exc:
+            _set_flash(request, str(exc), "error")
+        return RedirectResponse(target_url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/financeiro/formas-pagamento")
+async def create_financial_payment_method_entry(
+    request: Request,
+    client_id: str = Form(...),
+    name: str = Form(...),
+):
+    selected_client_id = _parse_optional_int(client_id)
+    target_url = _finance_settings_url(selected_client_id)
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(target_url, status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        try:
+            if selected_client_id is None:
+                raise ValueError("Selecione um cliente para cadastrar a forma de pagamento.")
+            create_financial_payment_method(db, client_id=selected_client_id, name=name)
+            _set_flash(request, "Forma de pagamento cadastrada.", "success")
+        except ValueError as exc:
+            _set_flash(request, str(exc), "error")
+        return RedirectResponse(target_url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/clientes/{client_id}/contatos")
+async def create_bpo_contact(
+    request: Request,
+    client_id: int,
+    name: str = Form(...),
+    email: str = Form(default=""),
+    phone: str = Form(default=""),
+    role: str = Form(default=""),
+    is_primary: str | None = Form(default=None),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        create_client_contact(
+            db,
+            client_id=client_id,
+            name=name,
+            email=email,
+            phone=phone,
+            role=role,
+            is_primary=is_primary == "on",
+        )
+        _set_flash(request, "Contato salvo no cliente.", "success")
+        return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/clientes/{client_id}/tarefas")
+async def create_bpo_task(
+    request: Request,
+    client_id: int,
+    title: str = Form(...),
+    description: str = Form(default=""),
+    task_template_id: str | None = Form(default=None),
+    competence_date: str | None = Form(default=None),
+    due_date: str | None = Form(default=None),
+    assigned_user_id: str | None = Form(default=None),
+    priority: str = Form(default="normal"),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        create_task(
+            db,
+            client_id=client_id,
+            title=title,
+            description=description,
+            created_by_user_id=user.id,
+            assigned_user_id=_parse_optional_int(assigned_user_id),
+            task_template_id=_parse_optional_int(task_template_id),
+            competence_date=parse_date_input(competence_date),
+            due_date=parse_date_input(due_date),
+            priority=priority,
+        )
+        _set_flash(request, "Tarefa operacional criada.", "success")
+        return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/tarefas/{task_id}/atualizar")
+async def update_bpo_task(
+    request: Request,
+    task_id: int,
+    redirect_to: str = Form(default="/operacoes/dashboard"),
+    title: str = Form(...),
+    description: str = Form(default=""),
+    competence_date: str | None = Form(default=None),
+    due_date: str | None = Form(default=None),
+    assigned_user_id: str | None = Form(default=None),
+    priority: str = Form(default="normal"),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(_normalize_redirect_target(redirect_to), status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        task = update_task(
+            db,
+            task_id=task_id,
+            title=title,
+            description=description,
+            assigned_user_id=_parse_optional_int(assigned_user_id),
+            competence_date=parse_date_input(competence_date),
+            due_date=parse_date_input(due_date),
+            priority=priority,
+        )
+        if not task:
+            _set_flash(request, "Tarefa não encontrada.", "error")
+        else:
+            _set_flash(request, "Tarefa atualizada.", "success")
+        return RedirectResponse(_normalize_redirect_target(redirect_to), status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/tarefas/{task_id}/status")
+async def change_bpo_task_status(
+    request: Request,
+    task_id: int,
+    status_value: str = Form(..., alias="status"),
+    redirect_to: str = Form(default="/operacoes/dashboard"),
+    note: str = Form(default=""),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(_normalize_redirect_target(redirect_to), status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        task = update_task_status(db, task_id=task_id, status_value=status_value, user_id=user.id, note=note)
+        if not task:
+            _set_flash(request, "Tarefa não encontrada.", "error")
+        else:
+            _set_flash(request, "Status da tarefa atualizado.", "success")
+        return RedirectResponse(_normalize_redirect_target(redirect_to), status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/tarefas/{task_id}/excluir")
+async def remove_bpo_task(
+    request: Request,
+    task_id: int,
+    redirect_to: str = Form(default="/operacoes/dashboard"),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(_normalize_redirect_target(redirect_to), status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        success, message = delete_task(db, task_id=task_id)
+        _set_flash(request, message, "success" if success else "error")
+        return RedirectResponse(_normalize_redirect_target(redirect_to), status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/pendencias/{item_id}/status")
+async def change_pending_item_status(
+    request: Request,
+    item_id: int,
+    status_value: str = Form(..., alias="status"),
+    redirect_to: str = Form(default="/operacoes/pendencias"),
+    note: str = Form(default=""),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(_normalize_redirect_target(redirect_to, "/operacoes/pendencias"), status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        item = update_pending_item_status(db, item_id=item_id, status_value=status_value, user_id=user.id, note=note)
+        if not item:
+            _set_flash(request, "Pendência não encontrada.", "error")
+        else:
+            _set_flash(request, "Pendência atualizada.", "success")
+        return RedirectResponse(_normalize_redirect_target(redirect_to, "/operacoes/pendencias"), status_code=status.HTTP_303_SEE_OTHER)
+
+
 @app.get("/healthz")
 async def healthz():
     try:
@@ -605,7 +1424,15 @@ async def healthz():
 
 
 @app.post("/conciliar")
-async def conciliar(request: Request, vendas: UploadFile = File(...), recebimentos: UploadFile = File(...)):
+async def conciliar(
+    request: Request,
+    client_id: str = Form(...),
+    task_id: str | None = Form(default=None),
+    period_start: str = Form(...),
+    period_end: str = Form(...),
+    vendas: UploadFile = File(...),
+    recebimentos: UploadFile = File(...),
+):
     _cleanup_expired_downloads()
     with _get_db() as db:
         user = _require_user(request, db)
@@ -617,7 +1444,69 @@ async def conciliar(request: Request, vendas: UploadFile = File(...), recebiment
         try:
             await _validate_csrf(request)
         except ConciliationUserError as exc:
-            return _render(request, user, "conciliacao.html", "operacoes", "conciliacao", "Conciliação de clientes", "Ferramenta operacional para cruzar relatórios de vendas e recebimentos das maquininhas dos clientes.", {"history": load_history(db), "submitted_names": {}, "error": str(exc)})
+            return _render_conciliation_page(
+                request,
+                user,
+                db,
+                error=str(exc),
+                selected_client_id=_parse_optional_int(client_id),
+                selected_task_id=_parse_optional_int(task_id),
+                period_start=period_start,
+                period_end=period_end,
+            )
+
+        selected_client_id = _parse_optional_int(client_id)
+        selected_task_id = _parse_optional_int(task_id)
+        try:
+            selected_period_start = _parse_required_date(period_start, "a data inicial")
+            selected_period_end = _parse_required_date(period_end, "a data final")
+        except ConciliationUserError as exc:
+            return _render_conciliation_page(
+                request,
+                user,
+                db,
+                error=str(exc),
+                selected_client_id=selected_client_id,
+                selected_task_id=selected_task_id,
+                period_start=period_start,
+                period_end=period_end,
+            )
+        if selected_period_end < selected_period_start:
+            return _render_conciliation_page(
+                request,
+                user,
+                db,
+                error="O período final não pode ser anterior ao período inicial.",
+                selected_client_id=selected_client_id,
+                selected_task_id=selected_task_id,
+                period_start=period_start,
+                period_end=period_end,
+            )
+        client = db.get(BPOClient, selected_client_id) if selected_client_id else None
+        if not client:
+            return _render_conciliation_page(
+                request,
+                user,
+                db,
+                error="Selecione um cliente válido antes de processar a conciliação.",
+                selected_client_id=selected_client_id,
+                selected_task_id=selected_task_id,
+                period_start=period_start,
+                period_end=period_end,
+            )
+        if selected_task_id:
+            linked_task = db.get(BPOTask, selected_task_id)
+            if not linked_task or linked_task.client_id != client.id:
+                return _render_conciliation_page(
+                    request,
+                    user,
+                    db,
+                    error="A tarefa escolhida não pertence ao cliente selecionado.",
+                    selected_client_id=selected_client_id,
+                    selected_task_id=selected_task_id,
+                    period_start=period_start,
+                    period_end=period_end,
+                )
 
         filenames = {"vendas": vendas.filename or "vendas.xlsx", "recebimentos": recebimentos.filename or "recebimentos.xlsx"}
         tempdir = tempfile.mkdtemp(prefix="conciliador_web_")
@@ -637,14 +1526,63 @@ async def conciliar(request: Request, vendas: UploadFile = File(...), recebiment
             _cleanup_tempdir(tempdir)
             message = str(exc) if isinstance(exc, ConciliationUserError) else "Falha inesperada ao processar os arquivos."
             _register_execution(db, user_id=user.id, status="Erro", arquivo_vendas=filenames["vendas"], arquivo_recebimentos=filenames["recebimentos"], detalhe=message)
-            return _render(request, user, "conciliacao.html", "operacoes", "conciliacao", "Conciliação de clientes", "Ferramenta operacional para cruzar relatórios de vendas e recebimentos das maquininhas dos clientes.", {"history": load_history(db), "submitted_names": filenames, "error": message})
+            return _render_conciliation_page(
+                request,
+                user,
+                db,
+                error=message,
+                submitted_names=filenames,
+                selected_client_id=selected_client_id,
+                selected_task_id=selected_task_id,
+                period_start=period_start,
+                period_end=period_end,
+            )
 
         duration_ms = int((time.perf_counter() - started_at) * 1000)
+        if not selected_task_id:
+            auto_task = create_default_task_for_conciliation(
+                db,
+                client_id=client.id,
+                created_by_user_id=user.id,
+                assigned_user_id=client.responsible_user_id,
+                competence_date=selected_period_start,
+                due_date=selected_period_end,
+            )
+            selected_task_id = auto_task.id
         token = uuid.uuid4().hex
         download_name = _build_download_name()
         DOWNLOADS[token] = {"tempdir": tempdir, "path": result.arquivo_saida, "download_name": download_name, "created_at": time.time(), "summary": {"arquivo_vendas": filenames["vendas"], "arquivo_recebimentos": filenames["recebimentos"], "qtde_total_processado": result.qtde_linhas_vendas + result.qtde_linhas_recebimentos, "qtde_linhas_vendas": result.qtde_linhas_vendas, "qtde_linhas_recebimentos": result.qtde_linhas_recebimentos, "qtde_recebido_por_dia": result.qtde_recebido_por_dia, "qtde_previsao": result.qtde_previsao, "qtde_vendas_pagas_sem_recebimento": result.qtde_vendas_pagas_sem_recebimento, "arquivo_saida": download_name, "duracao_ms": duration_ms}}
         _register_execution(db, user_id=user.id, status="Concluído", arquivo_vendas=filenames["vendas"], arquivo_recebimentos=filenames["recebimentos"], arquivo_saida=download_name, total_processado=result.qtde_linhas_vendas + result.qtde_linhas_recebimentos, vendas_sem_recebimento=result.qtde_vendas_pagas_sem_recebimento, duracao_ms=duration_ms, detalhe="")
-        return _render(request, user, "result.html", "operacoes", "conciliacao", "Conciliação processada", "Revise os indicadores do lote e baixe o arquivo consolidado.", {"download_token": token, "summary": DOWNLOADS[token]["summary"], "history": load_history(db, limit=5)})
+        run = persist_conciliation_run(
+            db,
+            client_id=client.id,
+            task_id=selected_task_id,
+            user_id=user.id,
+            period_start=selected_period_start,
+            period_end=selected_period_end,
+            filenames=filenames,
+            download_name=download_name,
+            result=result,
+            duration_ms=duration_ms,
+        )
+        return _render(
+            request,
+            user,
+            "result.html",
+            "operacoes",
+            "conciliacao",
+            "Conciliação processada",
+            "Revise os indicadores do lote e baixe o arquivo consolidado.",
+            {
+                "download_token": token,
+                "summary": DOWNLOADS[token]["summary"],
+                "history": load_history(db, limit=5),
+                "client_name": client.trade_name or client.legal_name,
+                "run_period": f"{selected_period_start.strftime('%d/%m/%Y')} ate {selected_period_end.strftime('%d/%m/%Y')}",
+                "task_redirect": f"/operacoes/clientes/{client.id}",
+                "conciliation_run_id": run.id,
+            },
+        )
 
 
 @app.get("/download/{token}")

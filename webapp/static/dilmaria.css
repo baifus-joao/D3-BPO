@@ -1,0 +1,158 @@
+.dilmaria-shell,
+.dilmaria-view,
+.dilmaria-side-stack,
+.dilmaria-main-stack {
+    display: grid;
+    gap: 18px;
+}
+
+.dilmaria-hero {
+    display: grid;
+    gap: 16px;
+}
+
+.dilmaria-tabbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.dilmaria-tab,
+.dilmaria-choice,
+.dilmaria-structure-card {
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.dilmaria-tab {
+    padding: 10px 14px;
+    font-weight: 700;
+}
+
+.dilmaria-tab.is-active {
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+}
+
+.dilmaria-view {
+    display: none;
+}
+
+.dilmaria-view.is-active {
+    display: grid;
+}
+
+.dilmaria-agent-grid,
+.dilmaria-structure-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.dilmaria-agent-card,
+.dilmaria-choice,
+.dilmaria-structure-card,
+.dilmaria-subcard,
+.dilmaria-details-card,
+.dilmaria-question-card {
+    display: grid;
+    gap: 10px;
+}
+
+.dilmaria-choice,
+.dilmaria-structure-card {
+    padding: 14px 16px;
+    text-align: left;
+    transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.dilmaria-choice:hover,
+.dilmaria-structure-card:hover,
+.dilmaria-agent-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    background: color-mix(in srgb, var(--accent) 5%, var(--surface-2));
+}
+
+.dilmaria-choice.selected,
+.dilmaria-structure-card.selected {
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+    background: color-mix(in srgb, var(--accent) 7%, var(--surface-2));
+}
+
+.dilmaria-choice strong,
+.dilmaria-structure-card strong,
+.agent-name {
+    font-size: 1rem;
+}
+
+.dilmaria-logo-box,
+.dilmaria-subcard,
+.dilmaria-details-card,
+.dilmaria-question-card {
+    padding: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+}
+
+.dilmaria-history-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dilmaria-history-grid.is-head {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+}
+
+.dilmaria-history-grid strong {
+    display: block;
+}
+
+.dilmaria-history-row {
+    padding: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+}
+
+.dilmaria-workspace-grid {
+    align-items: start;
+}
+
+.dilmaria-question-card textarea,
+.dilmaria-subcard textarea {
+    min-height: 96px;
+}
+
+.dilmaria-refined-item {
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface-3);
+}
+
+.dilmaria-refined-item h5 {
+    margin: 0;
+}
+
+.dilmaria-refined-item p {
+    margin: 0;
+    color: var(--muted);
+    white-space: pre-wrap;
+}
+
+@media (max-width: 980px) {
+    .dilmaria-history-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .dilmaria-history-grid {
+        grid-template-columns: 1fr;
+    }
+}
