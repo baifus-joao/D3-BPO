@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid two-col">
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Clientes</p>
+                <h2>Carteira BPO</h2>
+            </div>
+        </div>
+        <form action="/operacoes/clientes" method="get" class="toolbar-grid" data-loading-form="true" data-loading-text="Filtrando carteira...">
+            <input name="search" placeholder="Buscar por nome, documento ou responsavel" value="{{ client_filters.search }}">
+            <select name="status">
+                <option value="">Todos os status</option>
+                <option value="ativo" {% if client_filters.status == "ativo" %}selected{% endif %}>Ativo</option>
+                <option value="implantacao" {% if client_filters.status == "implantacao" %}selected{% endif %}>Implantacao</option>
+                <option value="pausado" {% if client_filters.status == "pausado" %}selected{% endif %}>Pausado</option>
+                <option value="inativo" {% if client_filters.status == "inativo" %}selected{% endif %}>Inativo</option>
+            </select>
+            <select name="responsible_user_id">
+                <option value="">Todos os responsaveis</option>
+                {% for item in users %}<option value="{{ item.id }}" {% if client_filters.responsible_user_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+            </select>
+            <button type="submit">Filtrar</button>
+            <a href="/operacoes/clientes" class="ghost-button button-link" data-loading-link="true">Limpar</a>
+        </form>
+        <section class="grid four-col compact-grid">
+            {% for item in client_metrics %}
+            <article class="metric-card"><span class="metric-label">{{ item.label }}</span><strong>{{ item.value }}</strong></article>
+            {% endfor %}
+        </section>
+        <div class="table-shell">
+            {% for item in client_rows %}
+            <a href="/operacoes/clientes/{{ item.id }}" class="context-card-link" data-loading-link="true">
+                <article class="client-card">
+                    <div class="client-card-header">
+                        <strong>{{ item.trade_name }}</strong>
+                        <span class="status-badge status-neutral">{{ item.status_label }}</span>
+                    </div>
+                    <span>{{ item.document }} | {{ item.segment }}</span>
+                    <span>Responsavel: {{ item.responsible_name }}</span>
+                    <span>{{ item.task_count }} abertas | {{ item.overdue_count }} atrasadas | {{ item.last_run_at }}</span>
+                    {% if item.primary_contact %}
+                    <span>Contato: {{ item.primary_contact.name }}{% if item.primary_contact.email %} | {{ item.primary_contact.email }}{% endif %}</span>
+                    {% endif %}
+                </article>
+            </a>
+            {% else %}
+            <p class="empty-state">Nenhum cliente operacional cadastrado.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Novo</p>
+                <h2>Cadastrar cliente</h2>
+            </div>
+        </div>
+        <form action="/operacoes/clientes" method="post" class="form" data-loading-form="true" data-loading-text="Salvando cliente...">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="field"><span>Razao social</span><input name="legal_name" required></label>
+            <label class="field"><span>Nome fantasia</span><input name="trade_name"></label>
+            <label class="field"><span>Documento</span><input name="document"></label>
+            <label class="field"><span>Segmento</span><input name="segment" placeholder="Comercio, servicos, etc."></label>
+            <label class="field">
+                <span>Responsavel interno</span>
+                <select name="responsible_user_id">
+                    <option value="">Sem responsavel</option>
+                    {% for item in users %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="field"><span>Observacoes</span><input name="notes"></label>
+            <button type="submit">Salvar cliente</button>
+        </form>
+    </article>
+</section>
+{% endblock %}

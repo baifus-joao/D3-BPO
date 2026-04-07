@@ -16,8 +16,11 @@ def _normalize_database_url(raw_url: str) -> str:
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+RAW_DATABASE_URL = getenv("D3_DATABASE_URL") or getenv(
+    "DATABASE_URL", f"sqlite:///{(BASE_DIR / 'app.db').as_posix()}"
+)
 DATABASE_URL = _normalize_database_url(
-    getenv("DATABASE_URL", f"sqlite:///{(BASE_DIR / 'app.db').as_posix()}")
+    RAW_DATABASE_URL
 )
 
 engine = create_engine(
@@ -32,4 +35,3 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 class Base(DeclarativeBase):
     pass
-

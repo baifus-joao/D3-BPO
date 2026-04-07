@@ -15,6 +15,34 @@
         <form action="/conciliar" method="post" enctype="multipart/form-data" class="form" id="conciliation-form" data-loading-form="true" data-loading-text="Processando arquivos...">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label class="field">
+                <span>Cliente</span>
+                <select name="client_id" id="conciliation-client" required>
+                    <option value="">Selecione um cliente</option>
+                    {% for item in clients %}
+                    <option value="{{ item.id }}" {% if selected_client_id == item.id %}selected{% endif %}>{{ item.trade_name or item.legal_name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <div class="grid two-col compact-grid">
+                <label class="field">
+                    <span>Periodo inicial</span>
+                    <input type="date" name="period_start" value="{{ selected_period_start }}" required>
+                </label>
+                <label class="field">
+                    <span>Periodo final</span>
+                    <input type="date" name="period_end" value="{{ selected_period_end }}" required>
+                </label>
+            </div>
+            <label class="field">
+                <span>Tarefa vinculada</span>
+                <select name="task_id">
+                    <option value="">Criar/usar automaticamente</option>
+                    {% for item in open_tasks %}
+                    <option value="{{ item.id }}" {% if selected_task_id == item.id %}selected{% endif %}>{{ item.title }}{% if item.due_date %} | {{ item.due_date.strftime("%d/%m/%Y") }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="field">
                 <span>Vendas</span>
                 <input type="file" name="vendas" accept=".xlsx,.xls" required>
                 <small>{{ submitted_names.get("vendas", "Nenhum arquivo.") }}</small>
@@ -37,7 +65,7 @@
     <aside class="card">
         <p class="section-kicker">Checklist</p>
         <ul class="plain-list">
-            <li>Mesmo cliente e mesmo periodo.</li>
+            <li>Selecione cliente, periodo e tarefa antes do upload.</li>
             <li>Arquivos originais.</li>
             <li>Baixe o consolidado ao final.</li>
         </ul>
@@ -69,4 +97,37 @@
     <p class="empty-state">Sem execucoes ainda.</p>
     {% endif %}
 </section>
+
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Nova camada</p>
+            <h2>Conciliacoes por cliente</h2>
+        </div>
+    </div>
+    <div class="table-shell">
+        {% for item in recent_runs %}
+        <div class="table-row">
+            <span>{{ item.executed_at }}</span>
+            <span>{{ item.client_name }}</span>
+            <span>{{ item.period }}</span>
+            <span>{{ item.divergences }} divergencias</span>
+            <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+        </div>
+        {% else %}
+        <p class="empty-state">Nenhuma conciliacao vinculada a cliente ainda.</p>
+        {% endfor %}
+    </div>
+</section>
+<script>
+    (() => {
+        const clientSelect = document.getElementById("conciliation-client");
+        if (!clientSelect) return;
+        clientSelect.addEventListener("change", () => {
+            const clientId = clientSelect.value;
+            const url = clientId ? `/operacoes/conciliacao?client_id=${clientId}` : "/operacoes/conciliacao";
+            window.location.href = url;
+        });
+    })();
+</script>
 {% endblock %}

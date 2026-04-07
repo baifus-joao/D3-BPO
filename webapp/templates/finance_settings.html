@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Financeiro</p>
+            <h2>Preparacao financeira da carteira</h2>
+        </div>
+        <div class="actions">
+            {% if selected_finance_client %}
+            <a href="/operacoes/clientes/{{ selected_finance_client.id }}" class="button-link" data-loading-link="true">Abrir cliente</a>
+            {% endif %}
+            <a href="/operacoes/dashboard" class="ghost-button button-link" data-loading-link="true">Voltar para operacoes</a>
+        </div>
+    </div>
+    <form action="/operacoes/financeiro/configuracoes" method="get" class="toolbar-grid" data-loading-form="true" data-loading-text="Abrindo estrutura financeira...">
+        <select name="client_id">
+            <option value="">Selecione um cliente</option>
+            {% for item in finance_clients %}
+            <option value="{{ item.id }}" {% if selected_finance_client and selected_finance_client.id == item.id %}selected{% endif %}>
+                {{ item.trade_name }} | {{ item.status_label }}
+            </option>
+            {% endfor %}
+        </select>
+        <button type="submit">Carregar estrutura</button>
+        <a href="/operacoes/clientes" class="ghost-button button-link" data-loading-link="true">Ir para carteira</a>
+    </form>
+    {% if selected_finance_client %}
+    <section class="grid four-col compact-grid">
+        <article class="metric-card"><span class="metric-label">Cliente</span><strong>{{ selected_finance_client.trade_name }}</strong></article>
+        <article class="metric-card"><span class="metric-label">Documento</span><strong>{{ selected_finance_client.document }}</strong></article>
+        <article class="metric-card"><span class="metric-label">Segmento</span><strong>{{ selected_finance_client.segment }}</strong></article>
+        <article class="metric-card"><span class="metric-label">Responsavel</span><strong>{{ selected_finance_client.responsible_name }}</strong></article>
+    </section>
+    <section class="grid compact-grid finance-metrics-grid">
+        {% for item in finance_metrics %}
+        <article class="metric-card"><span class="metric-label">{{ item.label }}</span><strong>{{ item.value }}</strong></article>
+        {% endfor %}
+    </section>
+    {% elif finance_clients %}
+    <p class="empty-state">Selecione um cliente para cadastrar contas, categorias, fornecedores e demais parametros financeiros.</p>
+    {% else %}
+    <p class="empty-state">Cadastre um cliente operacional antes de iniciar a estrutura financeira.</p>
+    {% endif %}
+</section>
+
+{% if selected_finance_client %}
+<section class="grid two-col">
+    <article class="card cadastro-card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Base</p>
+                <h2>Contas bancarias</h2>
+            </div>
+        </div>
+        <div class="cadastro-list">
+            {% for item in bank_accounts %}
+            <article class="cadastro-item">
+                <div class="cadastro-item-main">
+                    <strong>{{ item.account_name }}</strong>
+                    <span>{{ item.bank_name }} | Ag. {{ item.agency }} | Conta {{ item.account_number }}</span>
+                    {% if item.pix_key %}<span>PIX: {{ item.pix_key }}</span>{% endif %}
+                </div>
+                <strong>{{ item.initial_balance|currency }}</strong>
+            </article>
+            {% else %}
+            <p class="empty-state">Nenhuma conta bancaria cadastrada para este cliente.</p>
+            {% endfor %}
+        </div>
+        <form action="/operacoes/financeiro/contas-bancarias" method="post" class="cadastro-form cadastro-form-account" data-loading-form="true" data-loading-text="Salvando conta bancaria...">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="client_id" value="{{ selected_finance_client.id }}">
+            <input name="account_name" placeholder="Nome da conta" required>
+            <input name="bank_name" placeholder="Banco" required>
+            <input name="agency" placeholder="Agencia">
+            <input name="account_number" placeholder="Numero da conta">
+            <input name="pix_key" placeholder="Chave PIX">
+            <input name="initial_balance" placeholder="Saldo inicial" value="0">
+            <button type="submit">Cadastrar conta bancaria</button>
+        </form>
+    </article>
+
+    <article class="card cadastro-card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Base</p>
+                <h2>Categorias financeiras</h2>
+            </div>
+        </div>
+        <div class="cadastro-list">
+            {% for item in category_rows %}
+            <article class="cadastro-item">
+                <div class="cadastro-item-main">
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ item.kind_label }} | Pai: {{ item.parent_name }}</span>
+                </div>
+                <span class="status-badge status-neutral">{{ item.kind_label }}</span>
+            </article>
+            {% else %}
+            <p class="empty-state">Nenhuma categoria cadastrada para este cliente.</p>
+            {% endfor %}
+        </div>
+        <form action="/operacoes/financeiro/categorias" method="post" class="cadastro-form cadastro-form-category" data-loading-form="true" data-loading-text="Salvando categoria...">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="client_id" value="{{ selected_finance_client.id }}">
+            <input name="name" placeholder="Nome da categoria" required>
+            <select name="kind">
+                <option value="saida">Saida</option>
+                <option value="entrada">Entrada</option>
+            </select>
+            <select name="parent_id">
+                <option value="">Sem categoria pai</option>
+                {% for item in category_rows %}
+                <option value="{{ item.id }}">{{ item.name }} | {{ item.kind_label }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Cadastrar categoria</button>
+        </form>
+    </article>
+</section>
+
+<section class="grid two-col">
+    <article class="card cadastro-card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Base</p>
+                <h2>Centros de custo</h2>
+            </div>
+        </div>
+        <div class="cadastro-list">
+            {% for item in cost_center_rows %}
+            <article class="cadastro-item">
+                <div class="cadastro-item-main">
+                    <strong>{{ item.name }}</strong>
+                    <span>Centro de custo ativo para classificacao financeira.</span>
+                </div>
+            </article>
+            {% else %}
+            <p class="empty-state">Nenhum centro de custo cadastrado para este cliente.</p>
+            {% endfor %}
+        </div>
+        <form action="/operacoes/financeiro/centros-custo" method="post" class="cadastro-form" data-loading-form="true" data-loading-text="Salvando centro de custo...">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="client_id" value="{{ selected_finance_client.id }}">
+            <input name="name" placeholder="Nome do centro de custo" required>
+            <button type="submit">Cadastrar centro de custo</button>
+        </form>
+    </article>
+
+    <article class="card cadastro-card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Base</p>
+                <h2>Formas de pagamento</h2>
+            </div>
+        </div>
+        <div class="cadastro-list">
+            {% for item in payment_method_rows %}
+            <article class="cadastro-item">
+                <div class="cadastro-item-main">
+                    <strong>{{ item.name }}</strong>
+                    <span>Disponivel para pagar e receber deste cliente.</span>
+                </div>
+            </article>
+            {% else %}
+            <p class="empty-state">Nenhuma forma de pagamento cadastrada para este cliente.</p>
+            {% endfor %}
+        </div>
+        <form action="/operacoes/financeiro/formas-pagamento" method="post" class="cadastro-form" data-loading-form="true" data-loading-text="Salvando forma de pagamento...">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="client_id" value="{{ selected_finance_client.id }}">
+            <input name="name" placeholder="Nome da forma de pagamento" required>
+            <button type="submit">Cadastrar forma de pagamento</button>
+        </form>
+    </article>
+</section>
+
+<section class="card cadastro-card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Base</p>
+            <h2>Fornecedores</h2>
+        </div>
+    </div>
+    <div class="cadastro-list">
+        {% for item in supplier_rows %}
+        <article class="cadastro-item">
+            <div class="cadastro-item-main">
+                <strong>{{ item.name }}</strong>
+                <span>{{ item.document }}{% if item.email %} | {{ item.email }}{% endif %}{% if item.phone %} | {{ item.phone }}{% endif %}</span>
+            </div>
+        </article>
+        {% else %}
+        <p class="empty-state">Nenhum fornecedor cadastrado para este cliente.</p>
+        {% endfor %}
+    </div>
+    <form action="/operacoes/financeiro/fornecedores" method="post" class="cadastro-form cadastro-form-account" data-loading-form="true" data-loading-text="Salvando fornecedor...">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="client_id" value="{{ selected_finance_client.id }}">
+        <input name="name" placeholder="Nome do fornecedor" required>
+        <input name="document" placeholder="Documento">
+        <input name="email" placeholder="E-mail">
+        <input name="phone" placeholder="Telefone">
+        <button type="submit">Cadastrar fornecedor</button>
+    </form>
+</section>
+{% endif %}
+{% endblock %}

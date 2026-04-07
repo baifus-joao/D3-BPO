@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Operacoes</p>
+            <h2>Fila operacional</h2>
+        </div>
+        <div class="actions">
+            <a href="/operacoes/clientes" class="ghost-button button-link" data-loading-link="true">Ver carteira</a>
+            <a href="/operacoes/pendencias" class="ghost-button button-link" data-loading-link="true">Ver pendencias</a>
+            <a href="/operacoes/conciliacao" class="button-link" data-loading-link="true">Nova conciliacao</a>
+        </div>
+    </div>
+    <p class="page-subtitle">Visao unica da carga de trabalho, carteira e entregas recentes do BPO financeiro.</p>
+</section>
+
+<section class="grid four-col compact-grid">
+    {% for item in queue_metrics %}
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">{{ item.label }}</span>
+        <strong>{{ item.value }}</strong>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="card">
+    <form action="/operacoes/dashboard" method="get" class="toolbar-grid" data-loading-form="true" data-loading-text="Filtrando fila...">
+        <select name="client_id">
+            <option value="">Todos os clientes</option>
+            {% for item in clients %}<option value="{{ item.id }}" {% if queue_filters.client_id == item.id %}selected{% endif %}>{{ item.trade_name or item.legal_name }}</option>{% endfor %}
+        </select>
+        <select name="status">
+            <option value="">Todos os status</option>
+            <option value="pendente" {% if queue_filters.status == "pendente" %}selected{% endif %}>Pendente</option>
+            <option value="em_execucao" {% if queue_filters.status == "em_execucao" %}selected{% endif %}>Em execucao</option>
+            <option value="aguardando_cliente" {% if queue_filters.status == "aguardando_cliente" %}selected{% endif %}>Aguardando cliente</option>
+            <option value="atrasada" {% if queue_filters.status == "atrasada" %}selected{% endif %}>Atrasada</option>
+        </select>
+        <select name="assigned_user_id">
+            <option value="">Todos os responsaveis</option>
+            {% for item in users %}<option value="{{ item.id }}" {% if queue_filters.assigned_user_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+        <button type="submit">Aplicar filtros</button>
+        <a href="/operacoes/dashboard" class="ghost-button button-link" data-loading-link="true">Limpar</a>
+    </form>
+</section>
+
+<section class="grid two-col">
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Trabalho</p>
+                <h2>Tarefas abertas</h2>
+            </div>
+        </div>
+        <div class="table-shell">
+            {% for item in queue_tasks %}
+            <div class="queue-row">
+                <div class="queue-main">
+                    <strong>{{ item.title }}</strong>
+                    <span>{{ item.client_name }} | Competencia {{ item.competence_date }} | Vencimento {{ item.due_date }}</span>
+                </div>
+                <span class="status-badge status-{{ item.status_class }}">{{ item.status_label }}</span>
+                <form action="/operacoes/tarefas/{{ item.id }}/status" method="post" class="queue-actions" data-loading-form="true" data-loading-text="Atualizando tarefa...">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="redirect_to" value="/operacoes/dashboard">
+                    {% if item.can_start %}
+                    <button type="submit" name="status" value="em_execucao" class="secondary-action">Iniciar</button>
+                    {% endif %}
+                    {% if item.can_wait %}
+                    <button type="submit" name="status" value="aguardando_cliente" class="secondary-action">Aguardar cliente</button>
+                    {% endif %}
+                    {% if item.can_complete %}
+                    <button type="submit" name="status" value="concluida">Concluir</button>
+                    {% endif %}
+                </form>
+            </div>
+            {% else %}
+            <p class="empty-state">Nenhuma tarefa aberta na fila.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Carteira</p>
+                <h2>Clientes priorizados</h2>
+            </div>
+        </div>
+        <div class="list-stack">
+            {% for item in client_cards %}
+            <a href="/operacoes/clientes/{{ item.id }}" class="context-card-link" data-loading-link="true">
+                <article class="client-card">
+                    <div class="client-card-header">
+                        <strong>{{ item.trade_name }}</strong>
+                        <span class="status-badge status-neutral">{{ item.status_label }}</span>
+                    </div>
+                    <span>{{ item.responsible_name }} | {{ item.segment }}</span>
+                    <span>{{ item.task_count }} tarefas abertas | {{ item.overdue_count }} atrasadas</span>
+                    <span>{{ item.last_run_at }}</span>
+                </article>
+            </a>
+            {% else %}
+            <p class="empty-state">Cadastre clientes para começar a operar a carteira.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Concluidas</p>
+            <h2>Ultimas conciliacoes</h2>
+        </div>
+    </div>
+    <div class="table-shell">
+        {% for item in recent_runs %}
+        <div class="table-row">
+            <span>{{ item.executed_at }}</span>
+            <span>{{ item.client_name }}</span>
+            <span>{{ item.period }}</span>
+            <span>{{ item.divergences }} divergencias</span>
+            <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+        </div>
+        {% else %}
+        <p class="empty-state">Nenhuma conciliacao registrada no novo fluxo ainda.</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

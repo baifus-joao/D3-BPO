@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Pendencias</p>
+            <h2>Pendencias operacionais</h2>
+        </div>
+        <div class="actions">
+            <a href="/operacoes/dashboard" class="ghost-button button-link" data-loading-link="true">Voltar para fila</a>
+            <a href="/operacoes/conciliacao" class="button-link" data-loading-link="true">Nova conciliacao</a>
+        </div>
+    </div>
+    <p class="page-subtitle">Acompanhe divergências abertas, itens em análise e pendências aguardando retorno do cliente.</p>
+</section>
+
+<section class="grid four-col compact-grid">
+    {% for item in pending_metrics %}
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">{{ item.label }}</span>
+        <strong>{{ item.value }}</strong>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="card">
+    <form action="/operacoes/pendencias" method="get" class="toolbar-grid" data-loading-form="true" data-loading-text="Filtrando pendencias...">
+        <select name="client_id">
+            <option value="">Todos os clientes</option>
+            {% for item in clients %}<option value="{{ item.id }}" {% if pending_filters.client_id == item.id %}selected{% endif %}>{{ item.trade_name or item.legal_name }}</option>{% endfor %}
+        </select>
+        <select name="status">
+            <option value="">Todos os status</option>
+            <option value="aberto" {% if pending_filters.status == "aberto" %}selected{% endif %}>Aberto</option>
+            <option value="em_analise" {% if pending_filters.status == "em_analise" %}selected{% endif %}>Em analise</option>
+            <option value="aguardando_cliente" {% if pending_filters.status == "aguardando_cliente" %}selected{% endif %}>Aguardando cliente</option>
+            <option value="resolvido" {% if pending_filters.status == "resolvido" %}selected{% endif %}>Resolvido</option>
+            <option value="descartado" {% if pending_filters.status == "descartado" %}selected{% endif %}>Descartado</option>
+        </select>
+        <select name="item_type">
+            <option value="">Todos os tipos</option>
+            {% for value in pending_item_types %}<option value="{{ value }}" {% if pending_filters.item_type == value %}selected{% endif %}>{{ value }}</option>{% endfor %}
+        </select>
+        <button type="submit">Aplicar filtros</button>
+        <a href="/operacoes/pendencias" class="ghost-button button-link" data-loading-link="true">Limpar</a>
+    </form>
+</section>
+
+<section class="card">
+    <div class="table-shell">
+        {% for item in pending_items %}
+        <div class="pending-card">
+            <div class="pending-card-header">
+                <div class="pending-main">
+                    <strong>{{ item.client_name }}</strong>
+                    <span>Periodo {{ item.period }} | Referencia {{ item.reference_key }}</span>
+                </div>
+                <span class="status-badge status-{{ item.status_class }}">{{ item.status_label }}</span>
+            </div>
+            <div class="pending-meta">
+                <span>Tipo: {{ item.item_type }}</span>
+                <span>Venda: {{ item.sale_date }}</span>
+                <span>Previsto: {{ item.expected_payment_date }}</span>
+                <span>Bruto: {{ item.gross_amount|currency if item.gross_amount is not none else "-" }}</span>
+                <span>Líquido: {{ item.net_amount|currency if item.net_amount is not none else "-" }}</span>
+            </div>
+            <p class="pending-detail">{{ item.detail }}</p>
+            <div class="actions">
+                {% if item.client_id %}
+                <a href="/operacoes/clientes/{{ item.client_id }}" class="secondary-link" data-loading-link="true">Abrir cliente</a>
+                {% endif %}
+            </div>
+            <form action="/operacoes/pendencias/{{ item.id }}/status" method="post" class="toolbar-grid" data-loading-form="true" data-loading-text="Atualizando pendencia...">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="redirect_to" value="/operacoes/pendencias">
+                <select name="status">
+                    <option value="aberto" {% if item.status == "aberto" %}selected{% endif %}>Aberto</option>
+                    <option value="em_analise" {% if item.status == "em_analise" %}selected{% endif %}>Em analise</option>
+                    <option value="aguardando_cliente" {% if item.status == "aguardando_cliente" %}selected{% endif %}>Aguardando cliente</option>
+                    <option value="resolvido" {% if item.status == "resolvido" %}selected{% endif %}>Resolvido</option>
+                    <option value="descartado" {% if item.status == "descartado" %}selected{% endif %}>Descartado</option>
+                </select>
+                <input name="note" placeholder="Observacao opcional da atualizacao">
+                <button type="submit">Salvar status</button>
+            </form>
+        </div>
+        {% else %}
+        <p class="empty-state">Nenhuma pendência encontrada com os filtros atuais.</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

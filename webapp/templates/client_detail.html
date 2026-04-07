@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Cliente</p>
+            <h2>{{ client.trade_name }}</h2>
+        </div>
+        <div class="actions">
+            <a href="/operacoes/conciliacao?client_id={{ client.id }}" class="button-link" data-loading-link="true">Conciliar cliente</a>
+            <a href="/operacoes/financeiro/configuracoes?client_id={{ client.id }}" class="secondary-link" data-loading-link="true">Configurar financeiro</a>
+            <a href="/operacoes/clientes" class="ghost-button button-link" data-loading-link="true">Voltar para carteira</a>
+        </div>
+    </div>
+    <section class="grid four-col compact-grid">
+        <article class="metric-card"><span class="metric-label">Documento</span><strong>{{ client.document }}</strong></article>
+        <article class="metric-card"><span class="metric-label">Segmento</span><strong>{{ client.segment }}</strong></article>
+        <article class="metric-card"><span class="metric-label">Responsavel</span><strong>{{ client.responsible_name }}</strong></article>
+        <article class="metric-card"><span class="metric-label">Ultima conciliacao</span><strong>{{ client.last_run_at }}</strong></article>
+    </section>
+</section>
+
+<section class="grid two-col">
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Cadastro</p>
+                <h2>Atualizar cliente</h2>
+            </div>
+            <form action="/operacoes/clientes/{{ client.id }}/arquivar" method="post" data-confirm="Arquivar cliente {{ client.trade_name }}?" data-loading-form="true" data-loading-text="Arquivando cliente...">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="secondary-action">Arquivar cliente</button>
+            </form>
+        </div>
+        <form action="/operacoes/clientes/{{ client.id }}/atualizar" method="post" class="form" data-loading-form="true" data-loading-text="Atualizando cliente...">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="field"><span>Razao social</span><input name="legal_name" value="{{ client.legal_name }}" required></label>
+            <label class="field"><span>Nome fantasia</span><input name="trade_name" value="{{ client.trade_name }}"></label>
+            <label class="field"><span>Documento</span><input name="document" value="{{ client.document if client.document != '-' else '' }}"></label>
+            <label class="field"><span>Segmento</span><input name="segment" value="{{ client.segment if client.segment != '-' else '' }}"></label>
+            <label class="field">
+                <span>Status</span>
+                <select name="status">
+                    <option value="ativo" {% if client.status == "ativo" %}selected{% endif %}>Ativo</option>
+                    <option value="implantacao" {% if client.status == "implantacao" %}selected{% endif %}>Implantacao</option>
+                    <option value="pausado" {% if client.status == "pausado" %}selected{% endif %}>Pausado</option>
+                    <option value="inativo" {% if client.status == "inativo" %}selected{% endif %}>Inativo</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Responsavel interno</span>
+                <select name="responsible_user_id">
+                    <option value="">Sem responsavel</option>
+                    {% for item in users %}<option value="{{ item.id }}" {% if client.responsible_user_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="field"><span>Observacoes</span><input name="notes" value="{{ client.notes }}"></label>
+            <button type="submit">Salvar cliente</button>
+        </form>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Tarefas</p>
+                <h2>Fila do cliente</h2>
+            </div>
+        </div>
+        <div class="table-shell">
+            {% for item in tasks %}
+            <div class="queue-row">
+                <div class="queue-main">
+                    <strong>{{ item.title }}</strong>
+                    <span>Competencia {{ item.competence_date }} | Vencimento {{ item.due_date }} | {{ item.assignee_name }}</span>
+                </div>
+                <span class="status-badge status-{{ item.status_class }}">{{ item.status_label }}</span>
+                <form action="/operacoes/tarefas/{{ item.id }}/status" method="post" class="queue-actions" data-loading-form="true" data-loading-text="Atualizando tarefa...">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="redirect_to" value="/operacoes/clientes/{{ client.id }}">
+                    {% if item.can_start %}
+                    <button type="submit" name="status" value="em_execucao" class="secondary-action">Iniciar</button>
+                    {% endif %}
+                    {% if item.can_wait %}
+                    <button type="submit" name="status" value="aguardando_cliente" class="secondary-action">Aguardar cliente</button>
+                    {% endif %}
+                    {% if item.can_complete %}
+                    <button type="submit" name="status" value="concluida">Concluir</button>
+                    {% endif %}
+                </form>
+                <form action="/operacoes/tarefas/{{ item.id }}/atualizar" method="post" class="toolbar-grid" data-loading-form="true" data-loading-text="Salvando tarefa...">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="redirect_to" value="/operacoes/clientes/{{ client.id }}">
+                    <input name="title" value="{{ item.title_raw }}" required>
+                    <input name="description" value="{{ item.description_raw }}" placeholder="Descricao">
+                    <input type="date" name="competence_date" value="{{ item.competence_date_iso }}">
+                    <input type="date" name="due_date" value="{{ item.due_date_iso }}">
+                    <select name="assigned_user_id">
+                        <option value="">Sem responsavel</option>
+                        {% for user_item in users %}<option value="{{ user_item.id }}" {% if item.assigned_user_id == user_item.id %}selected{% endif %}>{{ user_item.name }}</option>{% endfor %}
+                    </select>
+                    <select name="priority">
+                        <option value="normal" {% if item.priority == "normal" %}selected{% endif %}>Normal</option>
+                        <option value="alta" {% if item.priority == "alta" %}selected{% endif %}>Alta</option>
+                        <option value="baixa" {% if item.priority == "baixa" %}selected{% endif %}>Baixa</option>
+                    </select>
+                    <button type="submit" class="secondary-action">Salvar tarefa</button>
+                </form>
+                <form action="/operacoes/tarefas/{{ item.id }}/excluir" method="post" data-confirm="Excluir tarefa {{ item.title }}?" data-loading-form="true" data-loading-text="Excluindo tarefa...">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="redirect_to" value="/operacoes/clientes/{{ client.id }}">
+                    <button type="submit" class="secondary-action">Excluir tarefa</button>
+                </form>
+            </div>
+            {% else %}
+            <p class="empty-state">Nenhuma tarefa registrada para este cliente.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="grid two-col">
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Pendencias</p>
+                <h2>Divergencias abertas</h2>
+            </div>
+            <a href="/operacoes/pendencias?client_id={{ client.id }}" class="secondary-link" data-loading-link="true">Ver todas</a>
+        </div>
+        <div class="table-shell">
+            {% for item in pending_items %}
+            <div class="pending-card">
+                <div class="pending-card-header">
+                    <div class="pending-main">
+                        <strong>{{ item.reference_key }}</strong>
+                        <span>{{ item.period }} | {{ item.item_type }}</span>
+                    </div>
+                    <span class="status-badge status-{{ item.status_class }}">{{ item.status_label }}</span>
+                </div>
+                <div class="pending-meta">
+                    <span>Venda: {{ item.sale_date }}</span>
+                    <span>Previsto: {{ item.expected_payment_date }}</span>
+                    <span>Bruto: {{ item.gross_amount|currency if item.gross_amount is not none else "-" }}</span>
+                </div>
+                <p class="pending-detail">{{ item.detail }}</p>
+                <form action="/operacoes/pendencias/{{ item.id }}/status" method="post" class="toolbar-grid" data-loading-form="true" data-loading-text="Atualizando pendencia...">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="redirect_to" value="/operacoes/clientes/{{ client.id }}">
+                    <select name="status">
+                        <option value="aberto" {% if item.status == "aberto" %}selected{% endif %}>Aberto</option>
+                        <option value="em_analise" {% if item.status == "em_analise" %}selected{% endif %}>Em analise</option>
+                        <option value="aguardando_cliente" {% if item.status == "aguardando_cliente" %}selected{% endif %}>Aguardando cliente</option>
+                        <option value="resolvido" {% if item.status == "resolvido" %}selected{% endif %}>Resolvido</option>
+                        <option value="descartado" {% if item.status == "descartado" %}selected{% endif %}>Descartado</option>
+                    </select>
+                    <input name="note" placeholder="Observacao opcional">
+                    <button type="submit">Salvar status</button>
+                </form>
+            </div>
+            {% else %}
+            <p class="empty-state">Nenhuma pendência aberta para este cliente.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Contatos</p>
+                <h2>Pontos focais</h2>
+            </div>
+        </div>
+        <div class="list-stack">
+            {% for item in contacts %}
+            <article class="list-item">
+                <strong>{{ item.name }}{% if item.is_primary %} | Principal{% endif %}</strong>
+                <span>{{ item.role }}{% if item.email %} | {{ item.email }}{% endif %}{% if item.phone %} | {{ item.phone }}{% endif %}</span>
+            </article>
+            {% else %}
+            <p class="empty-state">Nenhum contato cadastrado.</p>
+            {% endfor %}
+        </div>
+        <form action="/operacoes/clientes/{{ client.id }}/contatos" method="post" class="toolbar-grid" data-loading-form="true" data-loading-text="Salvando contato...">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="name" placeholder="Nome" required>
+            <input name="email" placeholder="E-mail">
+            <input name="phone" placeholder="Telefone">
+            <input name="role" placeholder="Cargo">
+            <label class="toggle"><input type="checkbox" name="is_primary"><span>Principal</span></label>
+            <button type="submit">Salvar contato</button>
+        </form>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Nova</p>
+                <h2>Criar tarefa</h2>
+            </div>
+        </div>
+        <form action="/operacoes/clientes/{{ client.id }}/tarefas" method="post" class="form" data-loading-form="true" data-loading-text="Criando tarefa...">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="field"><span>Titulo</span><input name="title" required></label>
+            <label class="field"><span>Descricao</span><input name="description"></label>
+            <label class="field">
+                <span>Template</span>
+                <select name="task_template_id">
+                    <option value="">Manual</option>
+                    {% for item in task_templates %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="field"><span>Competencia</span><input type="date" name="competence_date"></label>
+            <label class="field"><span>Vencimento</span><input type="date" name="due_date"></label>
+            <label class="field">
+                <span>Responsavel</span>
+                <select name="assigned_user_id">
+                    <option value="">Sem responsavel</option>
+                    {% for item in users %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="field">
+                <span>Prioridade</span>
+                <select name="priority">
+                    <option value="normal">Normal</option>
+                    <option value="alta">Alta</option>
+                    <option value="baixa">Baixa</option>
+                </select>
+            </label>
+            <button type="submit">Criar tarefa</button>
+        </form>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Historico</p>
+                <h2>Conciliacoes recentes</h2>
+            </div>
+        </div>
+        <div class="table-shell">
+            {% for item in conciliation_runs %}
+            <div class="table-row">
+                <span>{{ item.executed_at }}</span>
+                <span>{{ item.period }}</span>
+                <span>{{ item.divergences }} divergencias</span>
+                <span>{{ item.arquivo_saida }}</span>
+                <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
+            </div>
+            {% else %}
+            <p class="empty-state">Nenhuma conciliacao registrada para este cliente.</p>
+            {% endfor %}
+        </div>
+        {% if task_events %}
+        <div class="list-stack">
+            {% for event in task_events %}
+            <article class="list-item">
+                <strong>{{ event.created_at }} | Tarefa #{{ event.task_id }}</strong>
+                <span>{{ event.user_name }} | {{ event.note }}</span>
+            </article>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </article>
+</section>
+{% endblock %}

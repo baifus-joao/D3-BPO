@@ -277,6 +277,7 @@ small {
 .grid.two-col { grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr); }
 .grid.three-col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid.four-col { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.finance-metrics-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .charts-grid { grid-template-columns: 1.2fr 1fr 1fr; }
 .compact-grid { gap: 12px; }
 
@@ -613,6 +614,93 @@ button,
     gap: 16px;
 }
 
+.queue-row,
+.client-card {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface-3);
+}
+
+.pending-card {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--danger) 4%, var(--surface-3));
+}
+
+.pending-card-header,
+.pending-meta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.pending-main {
+    display: grid;
+    gap: 4px;
+}
+
+.pending-main span,
+.pending-meta span,
+.pending-detail {
+    color: var(--muted);
+}
+
+.pending-detail {
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.queue-row {
+    grid-template-columns: minmax(0, 1.5fr) auto;
+    align-items: center;
+}
+
+.queue-main {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.queue-main strong,
+.client-card strong {
+    font-size: 1.02rem;
+}
+
+.queue-main span,
+.client-card span {
+    color: var(--muted);
+}
+
+.queue-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: end;
+}
+
+.client-card {
+    transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease;
+}
+
+.client-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+    background: color-mix(in srgb, var(--accent) 6%, var(--surface-3));
+}
+
+.client-card-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+}
+
 .mini-grid {
     display: grid;
     gap: 12px;
@@ -794,6 +882,7 @@ button,
     .grid.two-col,
     .grid.three-col,
     .grid.four-col,
+    .finance-metrics-grid,
     .charts-grid,
     .hero-card {
         grid-template-columns: 1fr;
@@ -827,6 +916,16 @@ button,
     .entry-row-top,
     .entry-row-bottom {
         grid-template-columns: 1fr;
+    }
+    .queue-row {
+        grid-template-columns: 1fr;
+    }
+    .pending-card-header,
+    .pending-meta {
+        align-items: start;
+    }
+    .queue-actions {
+        justify-content: stretch;
     }
     .cashflow-filter-actions {
         grid-template-columns: 1fr;
