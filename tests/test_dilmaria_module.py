@@ -230,7 +230,10 @@ def test_naturale_document_applies_heading_hierarchy() -> None:
 
     assert section.runs[0].bold is True
     assert int(section.runs[0].font.size.pt) == 15
+    assert str(section.runs[0].font.color.rgb) == "303030"
     assert subsection.runs[0].bold is True
     assert int(subsection.runs[0].font.size.pt) == 13
+    assert str(subsection.runs[0].font.color.rgb) == "484848"
     assert label.runs[0].bold is True
     assert int(label.runs[0].font.size.pt) == 11
+    assert str(label.runs[0].font.color.rgb) == "484848"

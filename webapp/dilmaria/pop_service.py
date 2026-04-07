@@ -46,10 +46,10 @@ MONTH_NAMES_PT_BR = {
     11: "novembro",
     12: "dezembro",
 }
-TITLE_COLOR = RGBColor(28, 61, 107)
-SUBTITLE_COLOR = RGBColor(88, 88, 88)
+TITLE_COLOR = RGBColor(48, 48, 48)
+SUBTITLE_COLOR = RGBColor(96, 96, 96)
 TEXT_COLOR = RGBColor(38, 38, 38)
-LABEL_COLOR = RGBColor(70, 70, 70)
+LABEL_COLOR = RGBColor(72, 72, 72)
 
 
 async def run_pop_generator_agent(
