@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, St
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
+from .time_utils import utcnow
 
 
 class BPOClient(Base):
@@ -20,8 +21,8 @@ class BPOClient(Base):
     segment: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     responsible_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     responsible_user = relationship("User")
     contacts: Mapped[list["BPOClientContact"]] = relationship(back_populates="client", cascade="all, delete-orphan")
@@ -40,7 +41,7 @@ class BPOClientContact(Base):
     phone: Mapped[str] = mapped_column(String(40), nullable=False, default="")
     role: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     client: Mapped[BPOClient] = relationship(back_populates="contacts")
 
@@ -54,7 +55,7 @@ class BPOTaskTemplate(Base):
     default_sla_days: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     requires_competence: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     tasks: Mapped[list["BPOTask"]] = relationship(back_populates="task_template")
     routines: Mapped[list["BPORecurringRoutine"]] = relationship(back_populates="task_template")
@@ -70,8 +71,8 @@ class BPORecurringRoutine(Base):
     day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     default_assignee_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     client: Mapped[BPOClient] = relationship(back_populates="routines")
     task_template: Mapped[BPOTaskTemplate] = relationship(back_populates="routines")
@@ -94,8 +95,8 @@ class BPOTask(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     client: Mapped[BPOClient] = relationship(back_populates="tasks")
     task_template: Mapped[BPOTaskTemplate | None] = relationship(back_populates="tasks")
@@ -113,7 +114,7 @@ class BPOTaskEvent(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
     event_type: Mapped[str] = mapped_column(String(40), nullable=False, default="nota")
     note: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     task: Mapped[BPOTask] = relationship(back_populates="events")
     user = relationship("User")
@@ -136,7 +137,7 @@ class BPOConciliationRun(Base):
     total_recebimentos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_divergencias: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     duracao_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     client: Mapped[BPOClient] = relationship(back_populates="conciliation_runs")
     task: Mapped[BPOTask | None] = relationship(back_populates="conciliation_runs")
@@ -159,6 +160,6 @@ class BPOConciliationItem(Base):
     difference_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="aberto", index=True)
     detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     conciliation_run: Mapped[BPOConciliationRun] = relationship(back_populates="items")

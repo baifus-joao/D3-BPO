@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from webapp.dilmaria.models import DilmariaPopRevision, DilmariaPopRun
 from webapp.dilmaria.pop_schema import POP, PopExecutionLogEntry, PopHistorySummary
+from webapp.time_utils import utcnow
 
 
 class PopHistoryService:
@@ -20,7 +20,7 @@ class PopHistoryService:
             db.add(revision)
         else:
             revision.current_revision += 1
-        revision.updated_at = datetime.utcnow()
+        revision.updated_at = utcnow()
         return f"Rev.{revision.current_revision:02d}"
 
     def log_execution(self, db: Session, pop: POP, user_id: int, payload_snapshot: dict | None = None) -> None:

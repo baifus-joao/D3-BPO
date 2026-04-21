@@ -117,7 +117,7 @@ def main() -> None:
             sys.executable,
             "-m",
             "uvicorn",
-            "main:app",
+            "webapp.main:app",
             "--host",
             "0.0.0.0",
             "--port",

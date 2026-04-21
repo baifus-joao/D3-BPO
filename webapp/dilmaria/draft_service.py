@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from webapp.dilmaria.models import DilmariaPopDraft
 from webapp.dilmaria.pop_schema import PopDraftState, SavedPopDraft
+from webapp.time_utils import utcnow
 
 
 class PopDraftService:
@@ -42,7 +42,7 @@ class PopDraftService:
             ensure_ascii=False,
             default=str,
         )
-        draft.updated_at = datetime.utcnow()
+        draft.updated_at = utcnow()
         db.commit()
         return SavedPopDraft(
             titulo=draft.titulo,

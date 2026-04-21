@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from webapp.db import Base
+from webapp.time_utils import utcnow
 
 
 class DilmariaPopRevision(Base):
@@ -17,8 +18,8 @@ class DilmariaPopRevision(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
     )
 
 
@@ -34,7 +35,7 @@ class DilmariaPopRun(Base):
     structure_key: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     structure_name: Mapped[str] = mapped_column(String(160), nullable=False, default="")
     payload_snapshot: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     user = relationship("User")
 
@@ -56,8 +57,8 @@ class DilmariaPopDraft(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
     )
 
     user = relationship("User")

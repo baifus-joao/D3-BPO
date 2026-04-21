@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, St
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
+from .time_utils import utcnow
 
 
 class BPOFinancialBankAccount(Base):
@@ -21,8 +22,8 @@ class BPOFinancialBankAccount(Base):
     pix_key: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     initial_balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     client = relationship("BPOClient")
     payables: Mapped[list["BPOFinancialPayable"]] = relationship(back_populates="bank_account")
@@ -38,8 +39,8 @@ class BPOFinancialCategory(Base):
     kind: Mapped[str] = mapped_column(String(20), nullable=False, default="saida", index=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("bpo_fin_categories.id"), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     client = relationship("BPOClient")
     parent: Mapped[BPOFinancialCategory | None] = relationship("BPOFinancialCategory", remote_side=[id])
@@ -53,8 +54,8 @@ class BPOFinancialCostCenter(Base):
     client_id: Mapped[int] = mapped_column(ForeignKey("bpo_clients.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     client = relationship("BPOClient")
     payables: Mapped[list["BPOFinancialPayable"]] = relationship(back_populates="cost_center")
@@ -70,8 +71,8 @@ class BPOFinancialSupplier(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     phone: Mapped[str] = mapped_column(String(40), nullable=False, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     client = relationship("BPOClient")
     payables: Mapped[list["BPOFinancialPayable"]] = relationship(back_populates="supplier")
@@ -84,8 +85,8 @@ class BPOFinancialPaymentMethod(Base):
     client_id: Mapped[int] = mapped_column(ForeignKey("bpo_clients.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     client = relationship("BPOClient")
     payables: Mapped[list["BPOFinancialPayable"]] = relationship(back_populates="payment_method")
@@ -113,8 +114,8 @@ class BPOFinancialPayable(Base):
     assigned_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     client = relationship("BPOClient")
@@ -140,7 +141,7 @@ class BPOFinancialPayablePayment(Base):
     reference: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     payable: Mapped[BPOFinancialPayable] = relationship(back_populates="payments")
     bank_account: Mapped[BPOFinancialBankAccount | None] = relationship(back_populates="payment_records")
@@ -155,7 +156,7 @@ class BPOFinancialPayableEvent(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
     event_type: Mapped[str] = mapped_column(String(40), nullable=False, default="nota", index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     payable: Mapped[BPOFinancialPayable] = relationship(back_populates="events")
     user = relationship("User")

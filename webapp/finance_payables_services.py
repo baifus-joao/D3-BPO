@@ -18,6 +18,7 @@ from .finance_models import (
     BPOFinancialSupplier,
 )
 from .models import User
+from .time_utils import utcnow
 
 
 PAYABLE_STATUS_LABELS = {
@@ -482,7 +483,7 @@ def cancel_payable(
     if _money(payable.paid_amount) > Decimal("0.00"):
         raise ValueError("Nao e possivel cancelar um titulo que ja possui baixa registrada.")
     payable.status = "cancelado"
-    payable.cancelled_at = datetime.utcnow()
+    payable.cancelled_at = utcnow()
     _register_event(
         db,
         payable_id=payable.id,

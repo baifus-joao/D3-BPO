@@ -11,11 +11,17 @@
 - `conciliador/core/aggregations.py`: regras de conciliacao.
 - `conciliador/core/writer.py`: escrita do Excel final.
 - `conciliador/service.py`: orquestracao da conciliacao.
+- `webapp/config.py`: configuracao central, carga de ambiente e validacoes sensiveis.
+- `webapp/bootstrap.py`: bootstrap do banco, seeds e limpeza de artefatos temporarios.
+- `webapp/lifecycle.py`: ciclo de vida da aplicacao com `lifespan`.
+- `webapp/logging_utils.py`: logging padronizado com saida em `stderr` e arquivo opcional.
 - `webapp/dilmaria/`: modulo integrado da DilmarIA com agente de POPs, historico, preview e exportacao `.docx`.
 - `webapp/db.py`: engine e sessao do banco.
 - `webapp/models.py`: tabelas de usuarios e historico.
 - `webapp/security.py`: hash e verificacao de senha.
-- `webapp/main.py`: autenticacao, painel, admin e fluxo web.
+- `webapp/main.py`: entrypoint ASGI canonico do painel.
+- `webapp/app_modular.py` e `webapp/routers/`: composicao das rotas e modulos web.
+- `docs/bpo_financeiro/`: base documental funcional e backlog do produto.
 
 ## Instalar dependencias
 ```powershell
@@ -24,10 +30,15 @@
 
 ## Executar localmente
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn main:app --reload
+.\.venv\Scripts\python.exe -m alembic upgrade head
+.\.venv\Scripts\python.exe -m uvicorn webapp.main:app --reload
 ```
 
 Abra `http://127.0.0.1:8000`.
+
+O app nao cria mais tabelas automaticamente no startup. O schema deve estar aplicado via Alembic antes de subir o servidor.
+Em desenvolvimento, se `SESSION_SECRET` nao estiver definido, o app gera um segredo efemero so para a sessao atual. Em deploy, defina sempre um segredo proprio.
+Em producao, `SESSION_SECRET` deve ter pelo menos 32 caracteres.
 
 ## Modulo DilmarIA integrado
 - Entrada no menu: `Operacoes > DilmarIA`
@@ -53,7 +64,7 @@ Regras da integracao:
 
 ## Testes
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests\test_dilmaria_module.py -q
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
 ## Migrações de banco com Alembic
@@ -77,6 +88,8 @@ Variaveis opcionais:
 $env:D3_BOOTSTRAP_ADMIN_NAME="Administrador D3"
 $env:D3_BOOTSTRAP_ADMIN_EMAIL="admin@d3financeiro.local"
 $env:D3_BOOTSTRAP_ADMIN_PASSWORD="Admin123!"
+$env:D3_LOG_LEVEL="INFO"
+$env:D3_LOG_FILE=""
 ```
 
 ## Banco de dados
@@ -110,8 +123,17 @@ Sem `OPENAI_API_KEY`, o fallback por IA fica desativado e o sistema usa apenas o
 $env:OPENAI_API_KEY="sua-chave"
 $env:D3_BOOTSTRAP_ADMIN_EMAIL="admin@d3financeiro.local"
 $env:D3_BOOTSTRAP_ADMIN_PASSWORD="Admin123!"
-.\.venv\Scripts\python.exe -m uvicorn main:app --reload
+.\.venv\Scripts\python.exe -m uvicorn webapp.main:app --reload
 ```
+
+## Convencoes do repositorio
+- `webapp.main:app` e o entrypoint ASGI oficial do projeto.
+- `main.py` na raiz existe apenas como shim de compatibilidade para ferramentas antigas.
+- Documentacao funcional, backlog e notas de produto ficam em `docs/`.
+- Artefatos de runtime como `.env`, bancos SQLite locais, caches e logs nao devem ser versionados.
+- Novos modulos Python devem seguir o padrao ja iniciado em `webapp/routers/` e `webapp/dependencies.py`, evitando concentrar tudo em um unico arquivo.
+- `.env.example` deve conter apenas placeholders e valores seguros de exemplo, nunca credenciais reais.
+- Logging em arquivo e opt-in via `D3_LOG_FILE`; por padrao o app escreve apenas em `stderr/stdout`.
 
 ## Usuarios e perfis
 - `admin`: cria usuarios, altera dados, ativa/desativa conta e redefine senhas.
@@ -154,9 +176,16 @@ Para manter cada projeto isolado:
 - se quiser usar o mesmo projeto Neon, prefira bancos separados em vez de misturar tudo no mesmo `public`
 
 ## Health check
-O endpoint de saude para Render e monitoramento e:
+O endpoint de saude leve para Render e monitoramento basico e:
 ```text
 /healthz
+```
+
+Esse endpoint nao consulta o banco e deve ser usado no health check frequente do host para nao manter a compute da Neon acordada sem necessidade.
+
+Para verificar disponibilidade do banco manualmente ou em monitoramento menos frequente, use:
+```text
+/readyz
 ```
 
 ## Arquivos de deploy

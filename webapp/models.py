@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, St
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
+from .time_utils import utcnow
 
 
 class User(Base):
@@ -18,12 +19,12 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="operacional")
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
     )
 
     executions: Mapped[list["ExecutionLog"]] = relationship(back_populates="user")
@@ -43,7 +44,7 @@ class ExecutionLog(Base):
     vendas_sem_recebimento: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     duracao_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     detalhe: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     user: Mapped[User] = relationship(back_populates="executions")
 
@@ -55,7 +56,7 @@ class Store(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
     code: Mapped[str] = mapped_column(String(40), nullable=False, unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     transactions: Mapped[list["FinancialTransaction"]] = relationship(back_populates="store")
 
@@ -69,7 +70,7 @@ class BankAccount(Base):
     branch: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     account_number: Mapped[str] = mapped_column(String(40), nullable=False, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     transactions: Mapped[list["FinancialTransaction"]] = relationship(back_populates="bank_account")
 
@@ -82,7 +83,7 @@ class FinancialCategory(Base):
     type: Mapped[str] = mapped_column(String(20), nullable=False, default="ENTRADA")
     color: Mapped[str] = mapped_column(String(20), nullable=False, default="#22ffc4")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     transactions: Mapped[list["FinancialTransaction"]] = relationship(back_populates="category")
 
@@ -118,12 +119,12 @@ class FinancialTransaction(Base):
     planned_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     realized_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
     )
 
     category: Mapped[FinancialCategory | None] = relationship(back_populates="transactions")

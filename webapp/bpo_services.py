@@ -20,6 +20,7 @@ from .bpo_models import (
     BPOTaskTemplate,
 )
 from .models import User
+from .time_utils import utcnow
 
 
 TASK_STATUS_LABELS = {
@@ -509,9 +510,9 @@ def update_task_status(
     normalized = status_value if status_value in TASK_STATUS_LABELS else "pendente"
     task.status = normalized
     if normalized == "em_execucao" and task.started_at is None:
-        task.started_at = datetime.utcnow()
+        task.started_at = utcnow()
     if normalized == "concluida":
-        task.completed_at = datetime.utcnow()
+        task.completed_at = utcnow()
     elif normalized != "concluida":
         task.completed_at = None
     db.add(
@@ -705,7 +706,7 @@ def update_pending_item_status(
     item.status = normalized
     if note.strip():
         preserved = item.detail.strip()
-        item.detail = f"{preserved}\n\n[{datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC')}] {note.strip()}".strip()
+        item.detail = f"{preserved}\n\n[{utcnow().strftime('%d/%m/%Y %H:%M UTC')}] {note.strip()}".strip()
 
     run = item.conciliation_run
     if run and run.task_id:

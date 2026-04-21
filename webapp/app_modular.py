@@ -2,49 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from io import BytesIO
-import logging
-import os
 import shutil
 import tempfile
 import time
 import unicodedata
 import uuid
 from datetime import date, datetime
-from decimal import Decimal
-from os import getenv
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import FastAPI, File, Form, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.middleware.sessions import SessionMiddleware
 
-BASE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BASE_DIR.parent
-
-
-def _load_local_env() -> None:
-    env_path = PROJECT_ROOT / ".env"
-    if not env_path.exists():
-        return
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        if key.strip() and key.strip() not in os.environ:
-            os.environ[key.strip()] = value.strip().strip('"').strip("'")
-
-
-_load_local_env()
-
-from conciliador.core.ai_layout import is_ai_layout_enabled
 from conciliador.service import ConciliationUserError, run_conciliation
 
 from .bpo_models import BPOClient, BPOConciliationRun, BPOTask
@@ -63,7 +37,6 @@ from .bpo_services import (
     load_clients_overview,
     load_operations_queue,
     persist_conciliation_run,
-    seed_bpo_data,
     update_client,
     update_pending_item_status,
     update_task,
@@ -78,176 +51,69 @@ from .finance_services import (
     load_finance_setup_overview,
     load_finance_setup_reference_lists,
 )
-from .cashflow import build_cashflow_form_state, export_cashflow_workbook, load_cashflow_overview, load_cashflow_reference_lists, parse_date_input, safe_decimal
-from .dilmaria.doc_formatter_schema import DocFormatterPayload
-from .dilmaria.doc_formatter_service import run_doc_formatter_agent
-from .dilmaria.draft_service import PopDraftService
-from .dilmaria.exceptions import AgentExecutionError
-from .dilmaria.history_service import PopHistoryService as DilmariaPopHistoryService
+from .bootstrap import cleanup_expired_downloads
+from .cashflow import (
+    build_cashflow_form_state,
+    export_cashflow_workbook,
+    load_cashflow_overview,
+    load_cashflow_reference_lists,
+    parse_date_input,
+    safe_decimal,
+)
+from .config import settings
+from .dependencies import (
+    format_currency,
+    format_short_date,
+    get_db_session,
+    render_page,
+    require_user,
+    set_flash,
+    validate_csrf,
+)
 from .dilmaria.models import DilmariaPopDraft, DilmariaPopRevision, DilmariaPopRun  # noqa: F401
-from .dilmaria.pop_schema import GuidedPopRequest, PopRequest
-from .dilmaria.pop_service import preview_pop_generator_agent, run_pop_generator_agent
-from .dilmaria.pop_structures import list_pop_structures
+from .lifecycle import app_lifespan
+from .routers.auth import router as auth_router
+from .routers.dilmaria import router as dilmaria_router
+from .routers.health import router as health_router
 from .erp import (
-    CONTEXTS,
-    build_contexts,
-    ROLE_LABELS,
-    build_nav,
-    count_active_admins,
     has_permission,
     load_history,
     load_management_reports,
     load_operational_reports,
     load_reference_lists,
-    load_users,
-    normalize_role,
-    permission_flags,
-    seed_cashflow_data,
-    seed_reference_data,
-    serialize_user,
 )
 from .models import BankAccount, FinancialCategory, FinancialTransaction, PaymentMethod, Store, User
-from .security import hash_password, verify_password
 
-
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+BASE_DIR = settings.base_dir
 DOWNLOADS: dict[str, dict[str, object]] = {}
-
-from .db import Base, DATABASE_URL, SessionLocal, engine
 
 MAX_UPLOAD_SIZE = 15 * 1024 * 1024
 PROCESSING_TIMEOUT_SECONDS = 60
-SESSION_MAX_AGE_SECONDS = int(getenv("SESSION_MAX_AGE_SECONDS", str(60 * 60 * 8)))
-LOGIN_MAX_ATTEMPTS = int(getenv("LOGIN_MAX_ATTEMPTS", "5"))
-LOGIN_WINDOW_SECONDS = int(getenv("LOGIN_WINDOW_SECONDS", str(15 * 60)))
-LOGIN_LOCK_SECONDS = int(getenv("LOGIN_LOCK_SECONDS", str(10 * 60)))
-DOWNLOAD_TTL_SECONDS = int(getenv("DOWNLOAD_TTL_SECONDS", str(60 * 60)))
-SESSION_SECRET = getenv("SESSION_SECRET", "dev-session-secret-change-me")
-SESSION_DOMAIN = getenv("SESSION_DOMAIN")
-SESSION_HTTPS_ONLY = getenv("SESSION_HTTPS_ONLY", "false").lower() == "true"
-SESSION_SAME_SITE = getenv("SESSION_SAME_SITE", "lax")
-LOGGER = logging.getLogger("conciliador.web")
-LOGIN_ATTEMPTS: dict[str, list[float]] = {}
-LOGIN_LOCKS: dict[str, float] = {}
-
-
-def format_currency(value) -> str:
-    amount = Decimal(str(value or 0)).quantize(Decimal("0.01"))
-    text = f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"R$ {text}"
-
-
-def format_short_date(value) -> str:
-    if not value:
-        return "-"
-    if isinstance(value, datetime):
-        value = value.date()
-    return value.strftime("%d/%m/%Y")
-
-
-templates.env.filters["currency"] = format_currency
-templates.env.filters["shortdate"] = format_short_date
-
-app = FastAPI(title="D3 Hub")
+app = FastAPI(title="D3 Hub", lifespan=app_lifespan)
+app.state.downloads = DOWNLOADS
 app.add_middleware(
     SessionMiddleware,
-    secret_key=SESSION_SECRET,
-    same_site=SESSION_SAME_SITE,
-    https_only=SESSION_HTTPS_ONLY,
-    domain=SESSION_DOMAIN,
-    max_age=SESSION_MAX_AGE_SECONDS,
+    secret_key=settings.session_secret,
+    same_site=settings.session_same_site,
+    https_only=settings.session_https_only,
+    domain=settings.session_domain,
+    max_age=settings.session_max_age_seconds,
 )
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-
-if not LOGGER.handlers:
-    LOGGER.setLevel(logging.INFO)
-    handler = logging.FileHandler(PROJECT_ROOT / "conciliador_web.log", encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    LOGGER.addHandler(handler)
+app.include_router(auth_router)
+app.include_router(health_router)
+app.include_router(dilmaria_router)
 
 
-def _get_db() -> Session:
-    return SessionLocal()
-
-
-def _set_flash(request: Request, message: str, level: str = "info") -> None:
-    request.session["flash"] = {"message": message, "level": level}
-
-
-def _pop_flash(request: Request):
-    return request.session.pop("flash", None)
-
-
-def _get_csrf_token(request: Request) -> str:
-    token = request.session.get("csrf_token")
-    if not token:
-        token = uuid.uuid4().hex
-        request.session["csrf_token"] = token
-    return token
-
-
-async def _validate_csrf(request: Request) -> None:
-    form = await request.form()
-    if str(form.get("csrf_token", "")) != str(request.session.get("csrf_token", "")):
-        raise ConciliationUserError("Sessão inválida ou expirada. Atualize a página e tente novamente.")
-
-
-def _validate_csrf_header(request: Request) -> None:
-    token = request.headers.get("X-CSRF-Token", "")
-    if str(token) != str(request.session.get("csrf_token", "")):
-        raise ConciliationUserError("Sessão inválida ou expirada. Atualize a página e tente novamente.")
-
-
-def _require_user(request: Request, db: Session) -> User | None:
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return None
-    now = int(time.time())
-    if now - int(request.session.get("last_seen_at", now)) > SESSION_MAX_AGE_SECONDS:
-        request.session.clear()
-        return None
-    request.session["last_seen_at"] = now
-    user = db.get(User, user_id)
-    if not user or not user.is_active:
-        request.session.clear()
-        return None
-    return user
-
-
-def _client_identity(request: Request, email: str) -> str:
-    host = request.client.host if request.client else "unknown"
-    return f"{host}:{email.strip().lower()}"
-
-
-def _build_base_context(request: Request, user: User, area: str, active_module: str, title: str, subtitle: str) -> dict[str, object]:
-    return {
-        "current_user": serialize_user(user),
-        "nav_items": build_nav(area, active_module),
-        "context_items": build_contexts(area),
-        "current_area": area,
-        "current_area_meta": CONTEXTS.get(area, CONTEXTS["hub"]),
-        "page_title": title,
-        "page_subtitle": subtitle,
-        "flash": _pop_flash(request),
-        "csrf_token": _get_csrf_token(request),
-        "permissions": permission_flags(user),
-        "role_labels": ROLE_LABELS,
-    }
-
-
-def _render(request: Request, user: User, template_name: str, area: str, active_module: str, title: str, subtitle: str, extra: dict[str, object] | None = None):
-    context = _build_base_context(request, user, area, active_module, title, subtitle)
-    if extra:
-        context.update(extra)
-    return templates.TemplateResponse(request, template_name, context)
+_get_db = get_db_session
+_set_flash = set_flash
+_validate_csrf = validate_csrf
+_require_user = require_user
+_render = render_page
 
 
 def _cleanup_expired_downloads() -> None:
-    now = time.time()
-    for token, item in list(DOWNLOADS.items()):
-        if now - float(item.get("created_at", now)) > DOWNLOAD_TTL_SECONDS:
-            shutil.rmtree(str(item["tempdir"]), ignore_errors=True)
-            DOWNLOADS.pop(token, None)
+    cleanup_expired_downloads(DOWNLOADS, ttl_seconds=settings.download_ttl_seconds)
 
 
 def _cleanup_tempdir(tempdir: str) -> None:
@@ -397,28 +263,6 @@ def _register_execution(db: Session, **kwargs) -> None:
     db.commit()
 
 
-def _init_db() -> None:
-    if getenv("RENDER") and SESSION_SECRET == "dev-session-secret-change-me":
-        raise RuntimeError("Defina SESSION_SECRET antes do deploy em produção.")
-    if not getenv("RENDER") or DATABASE_URL.startswith("sqlite"):
-        Base.metadata.create_all(bind=engine)
-    with SessionLocal() as db:
-        if not db.scalar(select(func.count()).select_from(User).where(User.role == "admin")):
-            email = getenv("D3_BOOTSTRAP_ADMIN_EMAIL", "admin@d3financeiro.local").strip().lower()
-            password = getenv("D3_BOOTSTRAP_ADMIN_PASSWORD", "Admin123!").strip()
-            name = getenv("D3_BOOTSTRAP_ADMIN_NAME", "Administrador D3").strip()
-            db.add(User(name=name, email=email, role="admin", password_hash=hash_password(password), is_active=True))
-            db.commit()
-        seed_reference_data(db)
-        seed_cashflow_data(db)
-        seed_bpo_data(db)
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    _init_db()
-    _cleanup_expired_downloads()
-    LOGGER.info("startup_config ai_layout_enabled=%s openai_layout_model=%s", is_ai_layout_enabled(), getenv("OPENAI_LAYOUT_MODEL", ""))
 
 
 @app.middleware("http")
@@ -431,86 +275,6 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'"
     return response
 
-
-@app.get("/")
-async def root():
-    return RedirectResponse("/hub", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@app.get("/dashboard")
-async def legacy_dashboard():
-    return RedirectResponse("/hub", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if user:
-            return RedirectResponse("/hub", status_code=status.HTTP_303_SEE_OTHER)
-    return templates.TemplateResponse(request, "login.html", {"flash": _pop_flash(request), "csrf_token": _get_csrf_token(request), "error": None})
-
-
-@app.post("/login")
-async def login(request: Request, email: str = Form(...), password: str = Form(...)):
-    try:
-        await _validate_csrf(request)
-    except ConciliationUserError as exc:
-        return templates.TemplateResponse(request, "login.html", {"flash": _pop_flash(request), "csrf_token": _get_csrf_token(request), "error": str(exc)})
-    identity = _client_identity(request, email)
-    now = time.time()
-    if LOGIN_LOCKS.get(identity, 0) > now:
-        return templates.TemplateResponse(request, "login.html", {"flash": _pop_flash(request), "csrf_token": _get_csrf_token(request), "error": "Muitas tentativas de login. Aguarde e tente novamente."})
-    with _get_db() as db:
-        user = db.scalar(select(User).where(User.email == email.strip().lower()))
-        if not user or not user.is_active or not verify_password(password, user.password_hash):
-            attempts = [ts for ts in LOGIN_ATTEMPTS.get(identity, []) if now - ts <= LOGIN_WINDOW_SECONDS] + [now]
-            LOGIN_ATTEMPTS[identity] = attempts
-            if len(attempts) >= LOGIN_MAX_ATTEMPTS:
-                LOGIN_LOCKS[identity] = now + LOGIN_LOCK_SECONDS
-            return templates.TemplateResponse(request, "login.html", {"flash": _pop_flash(request), "csrf_token": _get_csrf_token(request), "error": "Credenciais inválidas."})
-        request.session["user_id"] = user.id
-        request.session["last_seen_at"] = int(now)
-        _set_flash(request, f"Sessão iniciada como {user.name}.", "success")
-        return RedirectResponse("/hub", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@app.post("/logout")
-async def logout(request: Request):
-    try:
-        await _validate_csrf(request)
-    except ConciliationUserError:
-        pass
-    request.session.clear()
-    _set_flash(request, "Sessão encerrada.", "success")
-    return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@app.get("/hub", response_class=HTMLResponse)
-async def hub_page(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-        return templates.TemplateResponse(
-            request,
-            "hub.html",
-            {
-                "current_user": serialize_user(user),
-                "flash": _pop_flash(request),
-                "csrf_token": _get_csrf_token(request),
-            },
-        )
-
-
-@app.get("/gestao")
-async def gestao_root():
-    return RedirectResponse("/gestao/dashboard", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@app.get("/operacoes")
-async def operacoes_root():
-    return RedirectResponse("/operacoes/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.get("/gestao/dashboard", response_class=HTMLResponse)
@@ -580,208 +344,6 @@ async def operacoes_dashboard(
             "D3 Operações",
             "Fila operacional da carteira, com tarefas, clientes e últimas conciliações do BPO.",
             {**queue, **refs},
-        )
-
-
-@app.get("/operacoes/dilmaria", response_class=HTMLResponse)
-async def dilmaria_page(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-        if not has_permission(user, "read"):
-            return RedirectResponse("/operacoes/dashboard", status_code=status.HTTP_303_SEE_OTHER)
-        return _render(
-            request,
-            user,
-            "dilmaria.html",
-            "operacoes",
-            "dilmaria",
-            "DilmarIA",
-            "Modulo de agentes com foco em POPs e automacao documental.",
-            {
-                "dilmaria_bootstrap": {
-                    "current_user": serialize_user(user),
-                    "csrf_token": _get_csrf_token(request),
-                    "settings_url": "/configuracoes",
-                    "hub_url": "/hub",
-                    "uses_host_openai_env": True,
-                }
-            },
-        )
-
-
-@app.get("/operacoes/dilmaria/api/health")
-async def dilmaria_health(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
-        return {"status": "ok"}
-
-
-@app.get("/operacoes/dilmaria/api/structures")
-async def dilmaria_structures(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
-        return [item.model_dump(mode="json") for item in list_pop_structures()]
-
-
-@app.get("/operacoes/dilmaria/api/history")
-async def dilmaria_history(request: Request, limit: int = Query(default=8)):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
-        safe_limit = max(1, min(limit, 20))
-        history = DilmariaPopHistoryService().build_history_summary(db, limit=safe_limit)
-        return history.model_dump(mode="json")
-
-
-@app.get("/operacoes/dilmaria/api/draft")
-async def dilmaria_draft(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
-        draft = PopDraftService().load_draft(db, user.id)
-        if draft is None:
-            return {"draft": None}
-        return {"draft": draft.model_dump(mode="json")}
-
-
-@app.post("/operacoes/dilmaria/api/draft")
-async def dilmaria_save_draft(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
-        if not has_permission(user, "edit"):
-            raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
-        try:
-            _validate_csrf_header(request)
-            payload = await request.json()
-            saved = PopDraftService().save_draft(db, user.id, payload)
-            return saved.model_dump(mode="json")
-        except ConciliationUserError as exc:
-            db.rollback()
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except ValueError as exc:
-            db.rollback()
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.delete("/operacoes/dilmaria/api/draft")
-async def dilmaria_clear_draft(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
-        if not has_permission(user, "edit"):
-            raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
-        try:
-            _validate_csrf_header(request)
-            cleared = PopDraftService().clear_draft(db, user.id)
-            return {"cleared": cleared}
-        except ConciliationUserError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/operacoes/dilmaria/api/preview")
-async def dilmaria_preview(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
-        if not has_permission(user, "edit"):
-            raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
-        try:
-            _validate_csrf_header(request)
-            payload = await request.json()
-            preview = await preview_pop_generator_agent(payload)
-            return preview.model_dump(mode="json")
-        except ConciliationUserError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except AgentExecutionError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/operacoes/dilmaria/api/run")
-async def dilmaria_run(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
-        if not has_permission(user, "edit"):
-            raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
-        try:
-            _validate_csrf_header(request)
-            payload = PopRequest.model_validate(await request.json()).model_dump(mode="python")
-            result = await run_pop_generator_agent(db, user.id, payload)
-        except ConciliationUserError as exc:
-            db.rollback()
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except AgentExecutionError as exc:
-            db.rollback()
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except Exception:
-            db.rollback()
-            raise
-        PopDraftService().clear_draft(db, user.id)
-
-        output_name = f"{result.pop.file_stub}.docx"
-        return StreamingResponse(
-            BytesIO(result.document_bytes),
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={
-                "Content-Disposition": f'attachment; filename="{output_name}"',
-                "X-POP-Code": result.pop.codigo,
-                "X-POP-Revision": result.pop.revisao,
-            },
-        )
-
-
-@app.post("/operacoes/dilmaria/api/doc-formatter/run")
-async def dilmaria_doc_formatter_run(
-    request: Request,
-    template: UploadFile = File(...),
-    text: str = Form(...),
-    mode: str = Form("placeholder"),
-    csrf_token: str = Form(default=""),
-):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            raise HTTPException(status_code=401, detail="Sessao obrigatoria.")
-        if not has_permission(user, "edit"):
-            raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
-        if str(csrf_token) != str(request.session.get("csrf_token", "")):
-            raise HTTPException(status_code=400, detail="Sessao invalida ou expirada.")
-        if not template.filename or not template.filename.lower().endswith(".docx"):
-            raise HTTPException(status_code=400, detail="Apenas arquivos .docx sao permitidos.")
-        if not text.strip():
-            raise HTTPException(status_code=400, detail="O texto para formatacao e obrigatorio.")
-
-        payload = DocFormatterPayload(
-            filename=template.filename,
-            content_type=template.content_type,
-            template_bytes=await template.read(),
-            text=text,
-            mode=mode,
-        )
-        try:
-            result = await run_doc_formatter_agent(payload.model_dump(mode="python"))
-        except AgentExecutionError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        filename = template.filename.rsplit(".", 1)[0]
-        output_name = f"{filename}-formatado.docx"
-        return StreamingResponse(
-            BytesIO(result.document_bytes),
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{output_name}"'},
         )
 
 
@@ -1025,13 +587,6 @@ async def reports_selector(request: Request):
         )
 
 
-@app.get("/configuracoes", response_class=HTMLResponse)
-async def settings_page(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-        return _render(request, user, "settings.html", "hub", "configuracoes", "Configurações do ambiente", "Perfil do usuário, permissões e administração compartilhada entre D3 Gestão e D3 Operações.", {"users": load_users(db) if has_permission(user, "manage_users") else [], "history": load_history(db, limit=20)})
 
 
 @app.post("/operacoes/clientes")
@@ -1412,17 +967,6 @@ async def change_pending_item_status(
         return RedirectResponse(_normalize_redirect_target(redirect_to, "/operacoes/pendencias"), status_code=status.HTTP_303_SEE_OTHER)
 
 
-@app.get("/healthz")
-async def healthz():
-    try:
-        with _get_db() as db:
-            db.execute(select(1))
-        return {"status": "ok"}
-    except Exception as exc:
-        LOGGER.exception("healthcheck_failed")
-        return HTMLResponse(f"database_unavailable: {exc}", status_code=503)
-
-
 @app.post("/conciliar")
 async def conciliar(
     request: Request,
@@ -1646,90 +1190,6 @@ async def delete_cashflow_entry(request: Request, transaction_id: int):
         return RedirectResponse("/gestao/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@app.post("/configuracoes/usuario")
-async def update_own_profile(request: Request, name: str = Form(...), email: str = Form(...), current_password: str = Form(default=""), new_password: str = Form(default="")):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-        await _validate_csrf(request)
-        duplicate = db.scalar(select(User).where(User.email == email.strip().lower(), User.id != user.id))
-        if duplicate:
-            _set_flash(request, "Já existe outro usuário com esse e-mail.", "error")
-            return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
-        user.name = name.strip()
-        user.email = email.strip().lower()
-        if new_password:
-            if len(new_password) < 8 or not verify_password(current_password, user.password_hash):
-                _set_flash(request, "Senha atual inválida ou nova senha muito curta.", "error")
-                return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
-            user.password_hash = hash_password(new_password)
-        db.commit()
-        _set_flash(request, "Perfil atualizado.", "success")
-        return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@app.post("/admin/users")
-async def create_user(request: Request, name: str = Form(...), email: str = Form(...), role: str = Form(...), password: str = Form(...)):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user or not has_permission(user, "manage_users"):
-            return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
-        await _validate_csrf(request)
-        normalized_role = normalize_role(role)
-        if len(password) < 8:
-            _set_flash(request, "A senha precisa ter pelo menos 8 caracteres.", "error")
-        elif db.scalar(select(User).where(User.email == email.strip().lower())):
-            _set_flash(request, "Já existe um usuário com esse e-mail.", "error")
-        else:
-            db.add(User(name=name.strip(), email=email.strip().lower(), role=normalized_role, password_hash=hash_password(password), is_active=True))
-            db.commit()
-            _set_flash(request, "Usuário criado com sucesso.", "success")
-        return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@app.post("/admin/users/{user_id}/update")
-async def update_user(request: Request, user_id: int, name: str = Form(...), email: str = Form(...), role: str = Form(...), is_active: str | None = Form(default=None)):
-    with _get_db() as db:
-        current_user = _require_user(request, db)
-        if not current_user or not has_permission(current_user, "manage_users"):
-            return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
-        await _validate_csrf(request)
-        target = db.get(User, user_id)
-        if not target:
-            _set_flash(request, "Usuário não encontrado.", "error")
-            return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
-        new_role = normalize_role(role)
-        new_is_active = is_active == "on"
-        if target.id == current_user.id:
-            new_is_active = True
-        if target.role == "admin" and target.is_active and (new_role != "admin" or not new_is_active) and count_active_admins(db) <= 1:
-            _set_flash(request, "Não é possível remover ou desativar o último admin ativo.", "error")
-            return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
-        target.name = name.strip()
-        target.email = email.strip().lower()
-        target.role = new_role
-        target.is_active = new_is_active
-        db.commit()
-        _set_flash(request, "Usuário atualizado.", "success")
-        return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@app.post("/admin/users/{user_id}/reset-password")
-async def reset_password(request: Request, user_id: int, new_password: str = Form(...)):
-    with _get_db() as db:
-        current_user = _require_user(request, db)
-        if not current_user or not has_permission(current_user, "manage_users"):
-            return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
-        await _validate_csrf(request)
-        target = db.get(User, user_id)
-        if target and len(new_password) >= 8:
-            target.password_hash = hash_password(new_password)
-            db.commit()
-            _set_flash(request, "Senha redefinida.", "success")
-        else:
-            _set_flash(request, "Não foi possível redefinir a senha.", "error")
-        return RedirectResponse("/configuracoes", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/cadastros/lojas")

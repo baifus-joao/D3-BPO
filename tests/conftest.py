@@ -6,12 +6,20 @@ import sys
 from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
 
 
 def _clear_webapp_modules() -> None:
     for name in [module for module in sys.modules if module.startswith("webapp")]:
         sys.modules.pop(name, None)
+
+
+def _upgrade_test_database(database_url: str) -> None:
+    alembic_config = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    alembic_config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(alembic_config, "head")
 
 
 @pytest.fixture
@@ -25,9 +33,11 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     _clear_webapp_modules()
-    app_modular = importlib.import_module("webapp.app_modular")
+    _upgrade_test_database(f"sqlite:///{db_path.as_posix()}")
+    _clear_webapp_modules()
+    main_module = importlib.import_module("webapp.main")
 
-    with TestClient(app_modular.app) as test_client:
+    with TestClient(main_module.app) as test_client:
         yield test_client
 
 
