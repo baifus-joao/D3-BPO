@@ -159,13 +159,15 @@ Os usuarios sao criados apenas por um `admin`.
    - `D3_BOOTSTRAP_ADMIN_PASSWORD`
    - `OPENAI_API_KEY` se quiser inferencia de layout por IA em producao
 5. Se voce for usar apenas a URL `*.onrender.com`, deixe `SESSION_DOMAIN` vazio.
-6. O `startCommand` do Render executa `scripts/render_start.py`, que:
+6. O fluxo de deploy no Render fica dividido em:
+   - `preDeployCommand`: executa `scripts/render_predeploy.py`
+   - `startCommand`: sobe `uvicorn` direto com `webapp.main:app`
+7. O `preDeployCommand`:
    - aplica `alembic stamp head` se o banco ja tiver as tabelas antigas sem controle do Alembic
    - executa `alembic upgrade head`
-   - sobe o `uvicorn`
-7. Faça o primeiro deploy.
-8. Entre com o admin bootstrap e crie os demais usuarios.
-9. Se no futuro publicar dominio proprio, defina `SESSION_DOMAIN` com o dominio final.
+8. Faça o primeiro deploy.
+9. Entre com o admin bootstrap e crie os demais usuarios.
+10. Se no futuro publicar dominio proprio, defina `SESSION_DOMAIN` com o dominio final.
 
 ## Separacao do OpApp
 Se `OpApp` e `painel-d3` usarem a mesma URL do Neon, eles vao compartilhar o mesmo banco.
@@ -191,3 +193,4 @@ Para verificar disponibilidade do banco manualmente ou em monitoramento menos fr
 ## Arquivos de deploy
 - `render.yaml`: configuracao do servico web no Render.
 - `.env.example`: modelo de variaveis de ambiente para producao.
+

@@ -3,9 +3,10 @@ services:
     name: painel-d3
     runtime: python
     plan: starter
-    autoDeploy: true
+    autoDeployTrigger: commit
     buildCommand: pip install -r requirements.txt
-    startCommand: python scripts/render_start.py
+    preDeployCommand: python scripts/render_predeploy.py
+    startCommand: python -m uvicorn webapp.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
