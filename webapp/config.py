@@ -5,10 +5,12 @@ import secrets
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
 VALID_SESSION_SAME_SITE = {"lax", "strict", "none"}
+INVALID_SESSION_DOMAIN_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 def _load_local_env() -> None:
@@ -76,6 +78,25 @@ def _resolve_session_same_site(https_only: bool) -> str:
     return same_site
 
 
+def _resolve_session_domain() -> str | None:
+    raw = (os.getenv("SESSION_DOMAIN") or "").strip()
+    if not raw:
+        return None
+
+    candidate = raw
+    if "://" in candidate:
+        candidate = urlsplit(candidate).hostname or ""
+    elif any(token in candidate for token in "/?#"):
+        candidate = urlsplit(f"//{candidate}", scheme="https").hostname or ""
+    else:
+        candidate = candidate.split(":", 1)[0]
+
+    normalized = candidate.strip().strip(".").lower()
+    if not normalized or normalized in INVALID_SESSION_DOMAIN_HOSTS:
+        return None
+    return normalized
+
+
 def _resolve_log_file() -> Path | None:
     raw = os.getenv("D3_LOG_FILE", "").strip()
     if not raw:
@@ -117,7 +138,7 @@ def get_settings() -> Settings:
         project_root=PROJECT_ROOT,
         database_url=_resolve_database_url(),
         session_secret=_resolve_session_secret(),
-        session_domain=os.getenv("SESSION_DOMAIN") or None,
+        session_domain=_resolve_session_domain(),
         session_https_only=https_only,
         session_same_site=_resolve_session_same_site(https_only),
         session_max_age_seconds=_env_int("SESSION_MAX_AGE_SECONDS", 60 * 60 * 8),
