@@ -57,11 +57,11 @@
             <header class="kanban-column-header">
                 <div>
                     <span class="metric-label">{{ column.label }}</span>
-                    <strong>{{ column.items|length }}</strong>
+                    <strong>{{ column["items"]|length }}</strong>
                 </div>
             </header>
             <div class="kanban-stack">
-                {% for item in column.items %}
+                {% for item in column["items"] %}
                 <article class="task-card task-card-{{ item.priority_tone }}">
                     <div class="task-card-top">
                         <strong>{{ item.title }}</strong>
