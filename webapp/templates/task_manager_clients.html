@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_task_manager_nav.html" %}
+
+<section class="card ops-filter-card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Carteira</p>
+            <h2>Clientes</h2>
+        </div>
+        <details class="quick-create-disclosure" id="quick-create-client">
+            <summary>Novo cliente</summary>
+            <div class="quick-create-panel">
+                <form action="/operacoes/clientes" method="post" class="form" data-loading-form="true" data-loading-text="Salvando cliente...">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <label class="field"><span>Empresa</span><input name="legal_name" required></label>
+                    <label class="field"><span>Nome fantasia</span><input name="trade_name"></label>
+                    <label class="field"><span>CNPJ</span><input name="document"></label>
+                    <label class="field"><span>Plano contratado</span><input name="contracted_plan"></label>
+                    <label class="field"><span>SLA (dia)</span><input name="sla_deadline_day" type="number" min="1" max="31"></label>
+                    <button type="submit">Criar cliente</button>
+                </form>
+            </div>
+        </details>
+    </div>
+
+    <form action="/operacoes/gestor-tarefas/clientes" method="get" class="toolbar-grid" data-loading-form="true" data-loading-text="Filtrando clientes...">
+        <input name="search" placeholder="Buscar por nome, documento, plano ou equipe" value="{{ client_filters.search }}">
+        <select name="status">
+            <option value="">Todos os status</option>
+            <option value="ativo" {% if client_filters.status == "ativo" %}selected{% endif %}>Ativo</option>
+            <option value="implantacao" {% if client_filters.status == "implantacao" %}selected{% endif %}>Implantação</option>
+            <option value="pausado" {% if client_filters.status == "pausado" %}selected{% endif %}>Pausado</option>
+            <option value="inativo" {% if client_filters.status == "inativo" %}selected{% endif %}>Inativo</option>
+        </select>
+        <select name="responsible_user_id">
+            <option value="">Todos os responsáveis</option>
+            {% for item in users %}<option value="{{ item.id }}" {% if client_filters.responsible_user_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+        <button type="submit">Filtrar</button>
+        <a href="/operacoes/gestor-tarefas/clientes" class="ghost-button button-link" data-loading-link="true">Limpar</a>
+    </form>
+</section>
+
+<section class="grid four-col compact-grid">
+    {% for item in client_metrics %}
+    <article class="card metric-card ops-kpi-card">
+        <span class="metric-label">{{ item.label }}</span>
+        <strong>{{ item.value }}</strong>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="client-list-grid">
+    {% for item in client_rows %}
+    <a href="/operacoes/gestor-tarefas/clientes/{{ item.id }}" class="context-card-link" data-loading-link="true">
+        <article class="client-dashboard-card">
+            <div class="client-card-header">
+                <div>
+                    <strong>{{ item.trade_name }}</strong>
+                    <span>{{ item.document }} · {{ item.segment }}</span>
+                </div>
+                <span class="status-badge status-neutral">{{ item.status_label }}</span>
+            </div>
+            <div class="client-card-body">
+                <span>Plano {{ item.contracted_plan }}</span>
+                <span>{{ item.sla_label }}</span>
+                <span>Equipe {{ item.team_label }}</span>
+                <span>{{ item.task_count }} abertas · {{ item.overdue_count }} atrasadas</span>
+            </div>
+        </article>
+    </a>
+    {% else %}
+    <div class="empty-panel">
+        <strong>Você ainda não tem clientes.</strong>
+        <span>Cadastre o primeiro para começar a estruturar a operação do BPO.</span>
+        <a href="#quick-create-client" class="button-link">Criar cliente</a>
+    </div>
+    {% endfor %}
+</section>
+{% endblock %}

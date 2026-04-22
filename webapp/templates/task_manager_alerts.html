@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_task_manager_nav.html" %}
+<section class="grid four-col compact-grid">
+    {% for item in alert_metrics %}<article class="card metric-card"><span class="metric-label">{{ item.label }}</span><strong>{{ item.value }}</strong></article>{% endfor %}
+</section>
+<section class="card">
+    <div class="card-header"><div><p class="section-kicker">Alertas</p><h2>Pontos de atenção</h2></div></div>
+    <div class="list-stack">
+        {% for item in alert_rows %}
+        <article class="list-item">
+            <strong>{{ item.type }} | {{ item.title }}</strong>
+            <span>{{ item.client_name }}</span>
+            <span class="status-badge status-{{ item.tone }}">{{ item.detail }}</span>
+        </article>
+        {% else %}
+        <p class="empty-state">Nenhum alerta aberto.</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

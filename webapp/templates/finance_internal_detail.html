@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Gestão interna</p>
+            <h2>{{ transaction.type_label }}</h2>
+        </div>
+        <div class="actions">
+            <a href="{{ transaction.duplicate_url }}" class="ghost-button button-link" data-loading-link="true">Duplicar</a>
+            <a href="/gestao/contas" class="ghost-button button-link" data-loading-link="true">Voltar</a>
+        </div>
+    </div>
+
+    <div class="detail-grid">
+        <article class="metric-card">
+            <span class="metric-label">Descrição</span>
+            <strong>{{ transaction.description }}</strong>
+            <span>{{ transaction.interested_party }}</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Modo</span>
+            <strong>{{ transaction.entry_mode_label }}</strong>
+            <span>{{ transaction.group_total }}</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Categoria</span>
+            <strong>{{ transaction.category }}</strong>
+            <span>{{ transaction.subcategory }}</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Status</span>
+            <strong>{{ transaction.status }}</strong>
+            <span>{{ transaction.transaction_date }}</span>
+        </article>
+    </div>
+
+    <div class="card-subsection detail-grid">
+        <div class="metric-card">
+            <span class="metric-label">Forma</span>
+            <strong>{{ transaction.payment_method }}</strong>
+            <span>Conta: {{ transaction.bank_account }}</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Loja</span>
+            <strong>{{ transaction.store }}</strong>
+            <span>Grupo: {{ transaction.group_size }} registro(s)</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Previsto</span>
+            <strong>{{ transaction.planned_date }}</strong>
+            <span>Realizado: {{ transaction.realized_date }}</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Proje?o</span>
+            <strong>{{ transaction.projection_start }}</strong>
+            <span>At?{{ transaction.projection_end }}</span>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Composicao</p>
+            <h2>Itens vinculados</h2>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="data-table finance-report-table">
+            <thead>
+                <tr>
+                    <th>Referencia</th>
+                    <th>Data</th>
+                    <th>Status</th>
+                    <th>Valor</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in related_rows %}
+                <tr>
+                    <td>{{ row.label }}</td>
+                    <td>{{ row.date}}</td>
+                    <td><span class="status-badge status-{{ row.status_class }}">{{ row.status }}</span></td>
+                    <td>{{ row.amount }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if permissions.can_edit and transaction.editable %}
+    <div class="card-subsection form-actions">
+        <form action="/gestao/financeiro/lancamentos/{{ transaction.id }}/excluir" method="post" data-confirm="Excluir este lançamento" data-loading-form="true" data-loading-text="Excluindo lançamento...">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="redirect_to" value="/gestao/contas">
+            <button type="submit" class="ghost-button">Excluir</button>
+        </form>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

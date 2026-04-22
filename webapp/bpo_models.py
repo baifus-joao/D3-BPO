@@ -19,6 +19,9 @@ class BPOClient(Base):
     document: Mapped[str] = mapped_column(String(32), nullable=False, default="", index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ativo", index=True)
     segment: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    contracted_plan: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    sla_deadline_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    team_label: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     responsible_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
@@ -26,9 +29,32 @@ class BPOClient(Base):
 
     responsible_user = relationship("User")
     contacts: Mapped[list["BPOClientContact"]] = relationship(back_populates="client", cascade="all, delete-orphan")
+    projects: Mapped[list["BPOProject"]] = relationship(back_populates="client", cascade="all, delete-orphan")
+    demands: Mapped[list["BPODemand"]] = relationship(back_populates="client", cascade="all, delete-orphan")
     routines: Mapped[list["BPORecurringRoutine"]] = relationship(back_populates="client", cascade="all, delete-orphan")
     tasks: Mapped[list["BPOTask"]] = relationship(back_populates="client", cascade="all, delete-orphan")
     conciliation_runs: Mapped[list["BPOConciliationRun"]] = relationship(back_populates="client", cascade="all, delete-orphan")
+
+
+class BPOProject(Base):
+    __tablename__ = "bpo_projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("bpo_clients.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    project_type: Mapped[str] = mapped_column(String(60), nullable=False, default="rotina_mensal", index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ativo", index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    responsible_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+
+    client: Mapped[BPOClient] = relationship(back_populates="projects")
+    responsible_user = relationship("User")
+    tasks: Mapped[list["BPOTask"]] = relationship(back_populates="project")
+    demands: Mapped[list["BPODemand"]] = relationship(back_populates="project")
 
 
 class BPOClientContact(Base):
@@ -84,6 +110,7 @@ class BPOTask(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("bpo_clients.id"), nullable=False, index=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("bpo_projects.id"), nullable=True, index=True)
     task_template_id: Mapped[int | None] = mapped_column(ForeignKey("bpo_task_templates.id"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -99,10 +126,12 @@ class BPOTask(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     client: Mapped[BPOClient] = relationship(back_populates="tasks")
+    project: Mapped[BPOProject | None] = relationship(back_populates="tasks")
     task_template: Mapped[BPOTaskTemplate | None] = relationship(back_populates="tasks")
     assigned_user = relationship("User", foreign_keys=[assigned_user_id])
     created_by = relationship("User", foreign_keys=[created_by_user_id])
     events: Mapped[list["BPOTaskEvent"]] = relationship(back_populates="task", cascade="all, delete-orphan")
+    time_entries: Mapped[list["BPOTaskTimeEntry"]] = relationship(back_populates="task", cascade="all, delete-orphan")
     conciliation_runs: Mapped[list["BPOConciliationRun"]] = relationship(back_populates="task")
 
 
@@ -117,6 +146,48 @@ class BPOTaskEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     task: Mapped[BPOTask] = relationship(back_populates="events")
+    user = relationship("User")
+
+
+class BPODemand(Base):
+    __tablename__ = "bpo_demands"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("bpo_clients.id"), nullable=False, index=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("bpo_projects.id"), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="manual", index=True)
+    demand_type: Mapped[str] = mapped_column(String(40), nullable=False, default="operacional", index=True)
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="normal", index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="aberta", index=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    responsible_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
+    converted_task_id: Mapped[int | None] = mapped_column(ForeignKey("bpo_tasks.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+
+    client: Mapped[BPOClient] = relationship(back_populates="demands")
+    project: Mapped[BPOProject | None] = relationship(back_populates="demands")
+    responsible_user = relationship("User", foreign_keys=[responsible_user_id])
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+    converted_task = relationship("BPOTask", foreign_keys=[converted_task_id])
+
+
+class BPOTaskTimeEntry(Base):
+    __tablename__ = "bpo_task_time_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("bpo_tasks.id"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("d3_users.id"), nullable=True, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+    task: Mapped[BPOTask] = relationship(back_populates="time_entries")
     user = relationship("User")
 
 

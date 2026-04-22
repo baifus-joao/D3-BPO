@@ -28,15 +28,30 @@ from .bpo_services import (
     create_client,
     create_client_contact,
     create_default_task_for_conciliation,
+    create_demand,
+    create_project,
     create_task,
+    convert_demand_to_task,
     delete_task,
     load_client_detail,
     load_client_open_tasks_for_conciliation,
     load_pending_items,
     load_client_reference_lists,
     load_clients_overview,
+    load_current_time_widget,
+    load_demands_overview,
+    load_alerts_overview,
     load_operations_queue,
+    load_performance_overview,
+    load_projects_overview,
     persist_conciliation_run,
+    load_routines_overview,
+    load_task_manager_clients,
+    load_task_manager_overview,
+    load_tasks_overview,
+    load_time_overview,
+    start_task_time_entry,
+    stop_task_time_entry,
     update_client,
     update_pending_item_status,
     update_task,
@@ -54,7 +69,9 @@ from .finance_services import (
 from .bootstrap import cleanup_expired_downloads
 from .cashflow import (
     build_cashflow_form_state,
+    clear_cashflow_caches,
     export_cashflow_workbook,
+    load_internal_finance_overview,
     load_cashflow_overview,
     load_cashflow_reference_lists,
     parse_date_input,
@@ -81,6 +98,12 @@ from .erp import (
     load_management_reports,
     load_operational_reports,
     load_reference_lists,
+)
+from .internal_finance_services import (
+    create_internal_finance_entries,
+    load_internal_finance_detail,
+    load_internal_finance_form_prefill,
+    parse_schedule_rows,
 )
 from .models import BankAccount, FinancialCategory, FinancialTransaction, PaymentMethod, Store, User
 
@@ -138,9 +161,9 @@ def _parse_optional_int(value: str | int | None) -> int | None:
 def _normalize_text_input(value: str | None) -> str:
     text = unicodedata.normalize("NFC", str(value or "").strip())
     replacements = {
-        "r?pido": "rápido",
-        "Rap?do": "Rápido",
-        "R?pido": "Rápido",
+        "rpido": "rápido",
+        "Rapdo": "Rápido",
+        "Rpido": "Rápido",
     }
     for source, target in replacements.items():
         text = text.replace(source, target)
@@ -161,6 +184,38 @@ def _normalize_redirect_target(value: str | None, default: str = "/operacoes/das
     return target
 
 
+def _task_manager_tabs(active: str) -> list[dict[str, object]]:
+    items = [
+        {"id": "visao_geral", "label": "Visão geral", "href": "/operacoes/gestor-tarefas"},
+        {"id": "clientes", "label": "Clientes", "href": "/operacoes/gestor-tarefas/clientes"},
+        {"id": "projetos", "label": "Projetos", "href": "/operacoes/gestor-tarefas/projetos"},
+        {"id": "tarefas", "label": "Tarefas", "href": "/operacoes/gestor-tarefas/tarefas"},
+        {"id": "demandas", "label": "Demandas", "href": "/operacoes/gestor-tarefas/demandas"},
+        {"id": "tempo", "label": "Tempo", "href": "/operacoes/gestor-tarefas/tempo"},
+        {"id": "rotinas", "label": "Rotinas", "href": "/operacoes/gestor-tarefas/rotinas"},
+        {"id": "alertas", "label": "Alertas", "href": "/operacoes/gestor-tarefas/alertas"},
+        {"id": "performance", "label": "Performance", "href": "/operacoes/gestor-tarefas/performance"},
+    ]
+    return [{**item, "active": item["id"] == active} for item in items]
+
+
+def _render_operations_page(
+    request: Request,
+    user: User,
+    db: Session,
+    template_name: str,
+    active_module: str,
+    title: str,
+    subtitle: str,
+    extra: dict[str, object] | None = None,
+):
+    payload = {"task_manager_tabs": _task_manager_tabs("visao_geral")}
+    payload.update(load_current_time_widget(db, user.id))
+    if extra:
+        payload.update(extra)
+    return _render(request, user, template_name, "operacoes", active_module, title, subtitle, payload)
+
+
 def _load_recent_conciliation_runs(db: Session, limit: int = 12) -> list[dict[str, object]]:
     runs = db.scalars(
         select(BPOConciliationRun)
@@ -175,7 +230,7 @@ def _load_recent_conciliation_runs(db: Session, limit: int = 12) -> list[dict[st
             {
                 "id": run.id,
                 "client_name": (client.trade_name or client.legal_name) if client else "Cliente removido",
-                "period": f"{run.period_start.strftime('%d/%m/%Y')} ate {run.period_end.strftime('%d/%m/%Y')}",
+                "period": f"{run.period_start.strftime('%d/%m/%Y')} até {run.period_end.strftime('%d/%m/%Y')}",
                 "status": run.status,
                 "status_class": "success" if run.status == "concluida" else "warning",
                 "divergences": run.total_divergencias,
@@ -228,7 +283,7 @@ def _build_query_string(params: dict[str, object]) -> str:
 
 def _finance_settings_url(client_id: int | None = None) -> str:
     query = _build_query_string({"client_id": client_id})
-    return f"/operacoes/financeiro/configuracoes{f'?{query}' if query else ''}"
+    return f"/operacoes/financeiro/configuracoes{f'{query}' if query else ''}"
 
 
 def _file_sha256(path: Path) -> str:
@@ -285,7 +340,7 @@ async def gestao_dashboard(request: Request):
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         upcoming = db.scalars(
             select(FinancialTransaction)
-            .where(FinancialTransaction.status == "previsto")
+            .where(FinancialTransaction.status == "previsto", FinancialTransaction.source == "manual")
             .order_by(FinancialTransaction.planned_date.asc())
             .limit(5)
         ).all()
@@ -304,46 +359,38 @@ async def gestao_dashboard(request: Request):
                 "dashboard_context": {
                     "kicker": "Gestão interna",
                     "headline": "Controles da própria D3 em um contexto separado",
-                    "description": "Fluxo de caixa, cadastros financeiros e relatórios gerenciais vivem aqui, sem se misturar com as ferramentas usadas na entrega aos clientes.",
+                    "description": "O financeiro interno da D3 fica organizado em contas a pagar e receber, fluxo de caixa, lançamentos e projeções, sem se misturar com a operação dos clientes.",
                     "module_count": 4,
                     "module_label": "Módulos de gestão",
                     "secondary_label": "Lançamentos previstos",
                     "secondary_value": len(upcoming),
                     "history_title": "Histórico de gestão",
+                    "modules": [
+                        {"title": "Contas a Pagar / Receber", "description": "Base estrutural dos registros financeiros da empresa.", "href": "/gestao/contas"},
+                        {"title": "Fluxo de Caixa", "description": "Visão consolidada do saldo e da saúde financeira ao longo do tempo.", "href": "/gestao/fluxo-caixa"},
+                        {"title": "Lançamentos", "description": "Visão operacional e direta para editar e acompanhar os registros.", "href": "/gestao/lancamentos"},
+                        {"title": "Projeções", "description": "Estimativas futuras para planejamento e antecipação de caixa.", "href": "/gestao/projecoes"},
+                    ],
                 },
             },
         )
 
 
 @app.get("/operacoes/dashboard", response_class=HTMLResponse)
-async def operacoes_dashboard(
-    request: Request,
-    client_id: str | None = Query(default=None),
-    status_value: str | None = Query(default=None, alias="status"),
-    assigned_user_id: str | None = Query(default=None),
-):
+async def operacoes_dashboard(request: Request):
     with _get_db() as db:
         user = _require_user(request, db)
         if not user:
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-        refs = load_client_reference_lists(db)
-        queue = load_operations_queue(
-            db,
-            filters={
-                "client_id": _parse_optional_int(client_id),
-                "status": (status_value or "").strip(),
-                "assigned_user_id": _parse_optional_int(assigned_user_id),
-            },
-        )
-        return _render(
+        return _render_operations_page(
             request,
             user,
-            "operations_queue.html",
-            "operacoes",
+            db,
+            "operations_dashboard.html",
             "dashboard",
             "D3 Operações",
-            "Fila operacional da carteira, com tarefas, clientes e últimas conciliações do BPO.",
-            {**queue, **refs},
+            "Painel executivo da operação, com foco em carga, SLA, produtividade e prioridades.",
+            load_task_manager_overview(db),
         )
 
 
@@ -361,8 +408,37 @@ async def conciliacao_page(request: Request, client_id: str | None = Query(defau
         return _render_conciliation_page(request, user, db, selected_client_id=_parse_optional_int(client_id))
 
 
-@app.get("/operacoes/clientes", response_class=HTMLResponse)
-async def clients_page(
+@app.get("/operacoes/gestor-tarefas", response_class=HTMLResponse)
+async def task_manager_page(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        refs = load_client_reference_lists(db)
+        return _render_operations_page(
+            request,
+            user,
+            db,
+            "task_manager_overview.html",
+            "gestor_tarefas",
+            "Gestor de tarefas",
+            "Centro operacional com clientes, projetos, tarefas, demandas, tempo e alertas.",
+            {**load_task_manager_overview(db), **refs, "task_manager_tabs": _task_manager_tabs("visao_geral")},
+        )
+
+
+@app.get("/operacoes/clientes")
+async def clients_legacy():
+    return RedirectResponse("/operacoes/gestor-tarefas/clientes", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get("/operacoes/clientes/{client_id}")
+async def client_detail_legacy(client_id: int):
+    return RedirectResponse(f"/operacoes/gestor-tarefas/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get("/operacoes/gestor-tarefas/clientes", response_class=HTMLResponse)
+async def task_manager_clients_page(
     request: Request,
     status_value: str | None = Query(default=None, alias="status"),
     responsible_user_id: str | None = Query(default=None),
@@ -373,16 +449,16 @@ async def clients_page(
         if not user:
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         refs = load_client_reference_lists(db)
-        return _render(
+        return _render_operations_page(
             request,
             user,
-            "clients.html",
-            "operacoes",
-            "clientes",
-            "Carteira de clientes",
-            "Base operacional do BPO com responsáveis, contatos e visibilidade da carga de trabalho.",
+            db,
+            "task_manager_clients.html",
+            "gestor_tarefas",
+            "Clientes",
+            "Base contratual e operacional de cada conta atendida pelo time.",
             {
-                **load_clients_overview(
+                **load_task_manager_clients(
                     db,
                     filters={
                         "status": (status_value or "").strip(),
@@ -391,37 +467,52 @@ async def clients_page(
                     },
                 ),
                 **refs,
+                "task_manager_tabs": _task_manager_tabs("clientes"),
             },
         )
 
 
-@app.get("/operacoes/financeiro/configuracoes", response_class=HTMLResponse)
-async def finance_settings_page(request: Request, client_id: str | None = Query(default=None)):
+@app.get("/operacoes/financeiro/configuracoes")
+async def finance_settings_legacy():
+    return RedirectResponse("/operacoes/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get("/operacoes/gestor-tarefas/projetos", response_class=HTMLResponse)
+async def task_manager_projects_page(
+    request: Request,
+    client_id: str | None = Query(default=None),
+    responsible_user_id: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+):
     with _get_db() as db:
         user = _require_user(request, db)
         if not user:
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-        refs = load_finance_setup_reference_lists(db)
-        selected_client_id = _parse_optional_int(client_id)
-        if selected_client_id is None and refs["finance_clients"]:
-            active_client = next((item for item in refs["finance_clients"] if item["status"] != "inativo"), None)
-            selected_client_id = (active_client or refs["finance_clients"][0])["id"]
-        return _render(
+        refs = load_client_reference_lists(db)
+        return _render_operations_page(
             request,
             user,
-            "finance_settings.html",
-            "operacoes",
-            "financeiro",
-            "Configuracoes financeiras",
-            "Estruture o cadastro financeiro de cada cliente antes de entrar em contas a pagar e receber.",
+            db,
+            "task_manager_projects.html",
+            "gestor_tarefas",
+            "Projetos",
+            "Projetos ativos por cliente, com responsável, prazo e status.",
             {
                 **refs,
-                **load_finance_setup_overview(db, client_id=selected_client_id),
+                **load_projects_overview(
+                    db,
+                    filters={
+                        "client_id": _parse_optional_int(client_id),
+                        "responsible_user_id": _parse_optional_int(responsible_user_id),
+                        "status": (status_value or "").strip(),
+                    },
+                ),
+                "task_manager_tabs": _task_manager_tabs("projetos"),
             },
         )
 
 
-@app.get("/operacoes/clientes/{client_id}", response_class=HTMLResponse)
+@app.get("/operacoes/gestor-tarefas/clientes/{client_id}", response_class=HTMLResponse)
 async def client_detail_page(request: Request, client_id: int):
     with _get_db() as db:
         user = _require_user(request, db)
@@ -430,55 +521,317 @@ async def client_detail_page(request: Request, client_id: int):
         detail = load_client_detail(db, client_id)
         if not detail:
             _set_flash(request, "Cliente não encontrado.", "error")
-            return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse("/operacoes/gestor-tarefas/clientes", status_code=status.HTTP_303_SEE_OTHER)
         refs = load_client_reference_lists(db)
-        return _render(
+        return _render_operations_page(
             request,
             user,
-            "client_detail.html",
-            "operacoes",
-            "clientes",
+            db,
+            "task_manager_client_detail.html",
+            "gestor_tarefas",
             detail["client"]["trade_name"],
-            "Histórico operacional, tarefas, contatos e conciliações deste cliente.",
-            {**detail, **refs},
+            "Visão detalhada do cliente, com projetos, tarefas, demandas, contatos e conciliações.",
+            {**detail, **refs, "task_manager_tabs": _task_manager_tabs("clientes")},
         )
 
 
-@app.get("/operacoes/pendencias", response_class=HTMLResponse)
-async def pending_items_page(
+@app.get("/operacoes/gestor-tarefas/tarefas", response_class=HTMLResponse)
+async def task_manager_tasks_page(
     request: Request,
     client_id: str | None = Query(default=None),
     status_value: str | None = Query(default=None, alias="status"),
-    item_type: str | None = Query(default=None),
+    project_id: str | None = Query(default=None),
+    assigned_user_id: str | None = Query(default=None),
 ):
     with _get_db() as db:
         user = _require_user(request, db)
         if not user:
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         refs = load_client_reference_lists(db)
-        data = load_pending_items(
-            db,
-            filters={
-                "client_id": _parse_optional_int(client_id),
-                "status": (status_value or "").strip(),
-                "item_type": item_type or "",
-            },
-        )
-        return _render(
+        return _render_operations_page(
             request,
             user,
-            "pending_items.html",
-            "operacoes",
-            "pendencias",
-            "Pendências operacionais",
-            "Acompanhamento das divergências abertas pela conciliação, com status e contexto por cliente.",
-            {**data, **refs},
+            db,
+            "task_manager_tasks.html",
+            "gestor_tarefas",
+            "Tarefas",
+            "Execução do time, com status, prioridade, tempo e proximidade de SLA.",
+            {
+                **refs,
+                **load_tasks_overview(
+                    db,
+                    filters={
+                        "client_id": _parse_optional_int(client_id),
+                        "project_id": _parse_optional_int(project_id),
+                        "status": (status_value or "").strip(),
+                        "assigned_user_id": _parse_optional_int(assigned_user_id),
+                    },
+                ),
+                "task_manager_tabs": _task_manager_tabs("tarefas"),
+            },
+        )
+
+
+@app.get("/operacoes/pendencias")
+async def pending_items_legacy():
+    return RedirectResponse("/operacoes/gestor-tarefas/alertas", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get("/operacoes/gestor-tarefas/demandas", response_class=HTMLResponse)
+async def task_manager_demands_page(
+    request: Request,
+    client_id: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+    demand_type: str | None = Query(default=None),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        refs = load_client_reference_lists(db)
+        return _render_operations_page(
+            request,
+            user,
+            db,
+            "task_manager_demands.html",
+            "gestor_tarefas",
+            "Demandas",
+            "Entrada de trabalho vinda do cliente, da equipe ou de canais como WhatsApp e e-mail.",
+            {
+                **refs,
+                **load_demands_overview(
+                    db,
+                    filters={
+                        "client_id": _parse_optional_int(client_id),
+                        "status": (status_value or "").strip(),
+                        "demand_type": demand_type or "",
+                    },
+                ),
+                "task_manager_tabs": _task_manager_tabs("demandas"),
+            },
+        )
+
+
+@app.get("/operacoes/gestor-tarefas/tempo", response_class=HTMLResponse)
+async def task_manager_time_page(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        return _render_operations_page(
+            request,
+            user,
+            db,
+            "task_manager_time.html",
+            "gestor_tarefas",
+            "Tempo",
+            "Leitura das horas registradas e apontamentos em andamento por tarefa.",
+            {**load_time_overview(db), "task_manager_tabs": _task_manager_tabs("tempo")},
+        )
+
+
+@app.get("/operacoes/gestor-tarefas/rotinas", response_class=HTMLResponse)
+async def task_manager_routines_page(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        return _render_operations_page(
+            request,
+            user,
+            db,
+            "task_manager_routines.html",
+            "gestor_tarefas",
+            "Rotinas",
+            "Estrutura recorrente que gera previsibilidade e escala para a operação.",
+            {**load_routines_overview(db), "task_manager_tabs": _task_manager_tabs("rotinas")},
+        )
+
+
+@app.get("/operacoes/gestor-tarefas/alertas", response_class=HTMLResponse)
+async def task_manager_alerts_page(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        return _render_operations_page(
+            request,
+            user,
+            db,
+            "task_manager_alerts.html",
+            "gestor_tarefas",
+            "Alertas",
+            "Tarefas atrasadas, clientes fora do SLA e sinais de sobrecarga da equipe.",
+            {**load_alerts_overview(db), "task_manager_tabs": _task_manager_tabs("alertas")},
+        )
+
+
+@app.get("/operacoes/gestor-tarefas/performance", response_class=HTMLResponse)
+async def task_manager_performance_page(request: Request):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        return _render_operations_page(
+            request,
+            user,
+            db,
+            "task_manager_performance.html",
+            "gestor_tarefas",
+            "Performance",
+            "Produtividade por colaborador e leitura operacional por cliente.",
+            {**load_performance_overview(db), "task_manager_tabs": _task_manager_tabs("performance")},
         )
 
 
 @app.get("/fluxo-caixa")
 async def cashflow_legacy():
     return RedirectResponse("/gestao/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get("/gestao/financeiro")
+async def finance_redirect():
+    return RedirectResponse("/gestao/contas", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get("/gestao/contas", response_class=HTMLResponse)
+async def finance_page(
+    request: Request,
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    category_id: str | None = Query(default=None),
+    store_id: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+    account_id: str | None = Query(default=None),
+    subcategory: str | None = Query(default=None),
+    interested_party: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    entry_mode: str | None = Query(default=None),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        normalized_category_id = _parse_optional_int(category_id)
+        normalized_store_id = _parse_optional_int(store_id)
+        normalized_account_id = _parse_optional_int(account_id)
+        refs = load_cashflow_reference_lists(db)
+        overview = load_internal_finance_overview(
+            db,
+            filters={
+                "date_from": parse_date_input(date_from),
+                "date_to": parse_date_input(date_to),
+                "category_id": normalized_category_id,
+                "store_id": normalized_store_id,
+                "status": status_value,
+                "account_id": normalized_account_id,
+                "subcategory": (subcategory or "").strip(),
+                "interested_party": (interested_party or "").strip(),
+                "search": (search or "").strip(),
+                "entry_mode": (entry_mode or "").strip(),
+                "type": "",
+                "source": "manual",
+            },
+            format_currency=format_currency,
+            format_short_date=format_short_date,
+        )
+        export_query = _build_query_string(
+            {
+                "date_from": date_from or "",
+                "date_to": date_to or "",
+                "category_id": normalized_category_id,
+                "store_id": normalized_store_id,
+                "account_id": normalized_account_id,
+                "status": status_value or "",
+                "subcategory": (subcategory or "").strip(),
+                "interested_party": (interested_party or "").strip(),
+                "search": (search or "").strip(),
+                "entry_mode": (entry_mode or "").strip(),
+            }
+        )
+        export_url = f"/gestao/contas/exportar{f'{export_query}' if export_query else ''}"
+        return _render(
+            request,
+            user,
+            "finance_internal.html",
+            "gestao",
+            "contas",
+            "Contas a Pagar e Receber",
+            "Base estruturada dos lançamentos financeiros da própria D3.",
+            {
+                **refs,
+                **overview,
+                "filters": {
+                    "date_from": date_from or "",
+                    "date_to": date_to or "",
+                    "category_id": normalized_category_id,
+                    "store_id": normalized_store_id,
+                    "status": status_value or "",
+                    "account_id": normalized_account_id,
+                    "subcategory": (subcategory or "").strip(),
+                    "interested_party": (interested_party or "").strip(),
+                    "search": (search or "").strip(),
+                    "entry_mode": (entry_mode or "").strip(),
+                },
+                "page_urls": {
+                    "base": "/gestao/contas",
+                    "export": export_url,
+                    "new_entry": "/gestao/financeiro/novo",
+                },
+            },
+        )
+
+
+@app.get("/gestao/financeiro/novo", response_class=HTMLResponse)
+async def finance_entry_form_page(request: Request, duplicate_id: str | None = Query(default=None)):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        refs = load_cashflow_reference_lists(db)
+        form_state = build_cashflow_form_state(db)
+        prefill = load_internal_finance_form_prefill(db, _parse_optional_int(duplicate_id))
+        return _render(
+            request,
+            user,
+            "finance_internal_form.html",
+            "gestao",
+            "contas",
+            "Novo lançamento financeiro",
+            "Cadastre contas a pagar e contas a receber da gestão interna da D3.",
+            {
+                **refs,
+                **form_state,
+                **prefill,
+            },
+        )
+
+
+@app.get("/gestao/financeiro/lancamentos/{transaction_id}", response_class=HTMLResponse)
+async def finance_entry_detail_page(request: Request, transaction_id: int):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        detail = load_internal_finance_detail(
+            db,
+            transaction_id=transaction_id,
+            format_currency=format_currency,
+            format_short_date=format_short_date,
+        )
+        if not detail:
+            _set_flash(request, "Lançamento financeiro não encontrado.", "error")
+            return RedirectResponse("/gestao/contas", status_code=status.HTTP_303_SEE_OTHER)
+        return _render(
+            request,
+            user,
+            "finance_internal_detail.html",
+            "gestao",
+            "contas",
+            "Detalhe do lançamento",
+            "Visualize os dados completos e a composição da conta interna.",
+            detail,
+        )
 
 
 @app.get("/gestao/fluxo-caixa", response_class=HTMLResponse)
@@ -491,19 +844,237 @@ async def cashflow_page(request: Request, date_from: str | None = Query(default=
         normalized_store_id = _parse_optional_int(store_id)
         normalized_account_id = _parse_optional_int(account_id)
         refs = load_cashflow_reference_lists(db)
-        overview = load_cashflow_overview(db, filters={"date_from": parse_date_input(date_from), "date_to": parse_date_input(date_to), "category_id": normalized_category_id, "store_id": normalized_store_id, "status": status_value, "account_id": normalized_account_id, "type": movement_type}, format_currency=format_currency, format_short_date=format_short_date, page=page)
+        overview = load_cashflow_overview(db, filters={"date_from": parse_date_input(date_from), "date_to": parse_date_input(date_to), "category_id": normalized_category_id, "store_id": normalized_store_id, "status": status_value, "account_id": normalized_account_id, "type": movement_type, "source": "manual"}, format_currency=format_currency, format_short_date=format_short_date, page=page)
         form_state = build_cashflow_form_state(db)
         export_query = _build_query_string({"date_from": date_from or "", "date_to": date_to or "", "category_id": normalized_category_id, "store_id": normalized_store_id, "account_id": normalized_account_id, "status": status_value or "", "type": movement_type or ""})
-        export_url = f"/gestao/fluxo-caixa/exportar{f'?{export_query}' if export_query else ''}"
-        return _render(request, user, "cashflow.html", "gestao", "fluxo_caixa", "Fluxo de caixa da D3", "Controle entradas, saídas, previsões e dados internos preparados para BI.", {**refs, **overview, **form_state, "filters": {"date_from": date_from or "", "date_to": date_to or "", "category_id": normalized_category_id, "store_id": normalized_store_id, "status": status_value or "", "account_id": normalized_account_id, "type": movement_type or ""}, "export_url": export_url})
+        export_url = f"/gestao/fluxo-caixa/exportar{f'{export_query}' if export_query else ''}"
+        return _render(request, user, "cashflow.html", "gestao", "fluxo_caixa", "Fluxo de Caixa", "Visão consolidada de tudo que entra e sai da D3 ao longo do tempo.", {**refs, **overview, **form_state, "filters": {"date_from": date_from or "", "date_to": date_to or "", "category_id": normalized_category_id, "store_id": normalized_store_id, "status": status_value or "", "account_id": normalized_account_id, "type": movement_type or ""}, "page_urls": {"base": "/gestao/fluxo-caixa", "export": export_url, "new_entry": "/gestao/financeiro/novo"}})
 
 
-@app.get("/gestao/fluxo-caixa/exportar")
-async def export_cashflow(request: Request, date_from: str | None = Query(default=None), date_to: str | None = Query(default=None), category_id: str | None = Query(default=None), store_id: str | None = Query(default=None), status_value: str | None = Query(default=None, alias="status"), account_id: str | None = Query(default=None), movement_type: str | None = Query(default=None, alias="type")):
+@app.get("/gestao/lancamentos", response_class=HTMLResponse)
+async def internal_entries_page(
+    request: Request,
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    category_id: str | None = Query(default=None),
+    store_id: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+    account_id: str | None = Query(default=None),
+    movement_type: str | None = Query(default=None, alias="type"),
+    subcategory: str | None = Query(default=None),
+    interested_party: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    entry_mode: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+):
     with _get_db() as db:
         user = _require_user(request, db)
         if not user:
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        normalized_category_id = _parse_optional_int(category_id)
+        normalized_store_id = _parse_optional_int(store_id)
+        normalized_account_id = _parse_optional_int(account_id)
+        refs = load_cashflow_reference_lists(db)
+        overview = load_cashflow_overview(
+            db,
+            filters={
+                "date_from": parse_date_input(date_from),
+                "date_to": parse_date_input(date_to),
+                "category_id": normalized_category_id,
+                "store_id": normalized_store_id,
+                "status": status_value,
+                "account_id": normalized_account_id,
+                "subcategory": (subcategory or "").strip(),
+                "interested_party": (interested_party or "").strip(),
+                "search": (search or "").strip(),
+                "entry_mode": (entry_mode or "").strip(),
+                "type": movement_type,
+                "source": "manual",
+            },
+            format_currency=format_currency,
+            format_short_date=format_short_date,
+            page=page,
+            page_size=50,
+        )
+        export_query = _build_query_string(
+            {
+                "date_from": date_from or "",
+                "date_to": date_to or "",
+                "category_id": normalized_category_id,
+                "store_id": normalized_store_id,
+                "account_id": normalized_account_id,
+                "status": status_value or "",
+                "type": movement_type or "",
+                "subcategory": (subcategory or "").strip(),
+                "interested_party": (interested_party or "").strip(),
+                "search": (search or "").strip(),
+                "entry_mode": (entry_mode or "").strip(),
+            }
+        )
+        export_url = f"/gestao/lancamentos/exportar{f'{export_query}' if export_query else ''}"
+        return _render(
+            request,
+            user,
+            "finance_entries.html",
+            "gestao",
+            "lancamentos",
+            "Lançamentos",
+            "Visão operacional e direta de todas as entradas e saídas da D3.",
+            {
+                **refs,
+                **overview,
+                "filters": {
+                    "date_from": date_from or "",
+                    "date_to": date_to or "",
+                    "category_id": normalized_category_id,
+                    "store_id": normalized_store_id,
+                    "status": status_value or "",
+                    "account_id": normalized_account_id,
+                    "subcategory": (subcategory or "").strip(),
+                    "interested_party": (interested_party or "").strip(),
+                    "search": (search or "").strip(),
+                    "entry_mode": (entry_mode or "").strip(),
+                    "type": movement_type or "",
+                },
+                "page_urls": {
+                    "base": "/gestao/lancamentos",
+                    "export": export_url,
+                    "new_entry": "/gestao/financeiro/novo",
+                },
+                "module_meta": {
+                    "kicker": "Operacional",
+                    "title": "Lançamentos",
+                    "description": "Lista direta de todos os registros financeiros para abrir, duplicar e controlar rapidamente.",
+                    "empty_state": "Nenhum lançamento encontrado com os filtros atuais.",
+                },
+            },
+        )
+
+
+@app.get("/gestao/projecoes", response_class=HTMLResponse)
+async def internal_projections_page(
+    request: Request,
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    category_id: str | None = Query(default=None),
+    store_id: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+    account_id: str | None = Query(default=None),
+    movement_type: str | None = Query(default=None, alias="type"),
+    subcategory: str | None = Query(default=None),
+    interested_party: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        normalized_category_id = _parse_optional_int(category_id)
+        normalized_store_id = _parse_optional_int(store_id)
+        normalized_account_id = _parse_optional_int(account_id)
+        refs = load_cashflow_reference_lists(db)
+        overview = load_cashflow_overview(
+            db,
+            filters={
+                "date_from": parse_date_input(date_from),
+                "date_to": parse_date_input(date_to),
+                "category_id": normalized_category_id,
+                "store_id": normalized_store_id,
+                "status": status_value,
+                "account_id": normalized_account_id,
+                "subcategory": (subcategory or "").strip(),
+                "interested_party": (interested_party or "").strip(),
+                "search": (search or "").strip(),
+                "entry_mode": "projecao",
+                "type": movement_type,
+                "source": "manual",
+            },
+            format_currency=format_currency,
+            format_short_date=format_short_date,
+            page=page,
+            page_size=50,
+        )
+        export_query = _build_query_string(
+            {
+                "date_from": date_from or "",
+                "date_to": date_to or "",
+                "category_id": normalized_category_id,
+                "store_id": normalized_store_id,
+                "account_id": normalized_account_id,
+                "status": status_value or "",
+                "type": movement_type or "",
+                "subcategory": (subcategory or "").strip(),
+                "interested_party": (interested_party or "").strip(),
+                "search": (search or "").strip(),
+            }
+        )
+        export_url = f"/gestao/projecoes/exportar{f'{export_query}' if export_query else ''}"
+        return _render(
+            request,
+            user,
+            "finance_entries.html",
+            "gestao",
+            "projecoes",
+            "Projeções",
+            "Estimativas financeiras futuras para planejamento e antecipação de caixa.",
+            {
+                **refs,
+                **overview,
+                "filters": {
+                    "date_from": date_from or "",
+                    "date_to": date_to or "",
+                    "category_id": normalized_category_id,
+                    "store_id": normalized_store_id,
+                    "status": status_value or "",
+                    "account_id": normalized_account_id,
+                    "subcategory": (subcategory or "").strip(),
+                    "interested_party": (interested_party or "").strip(),
+                    "search": (search or "").strip(),
+                    "entry_mode": "projecao",
+                    "type": movement_type or "",
+                },
+                "page_urls": {
+                    "base": "/gestao/projecoes",
+                    "export": export_url,
+                    "new_entry": "/gestao/financeiro/novo",
+                },
+                "module_meta": {
+                    "kicker": "Planejamento",
+                    "title": "Projeções",
+                    "description": "Registros futuros ainda não realizados, usados para simular o comportamento do caixa.",
+                    "empty_state": "Nenhuma projecao encontrada com os filtros atuais.",
+                    "fixed_entry_mode": True,
+                },
+            },
+        )
+
+
+@app.get("/gestao/contas/exportar")
+@app.get("/gestao/financeiro/exportar")
+@app.get("/gestao/fluxo-caixa/exportar")
+@app.get("/gestao/lancamentos/exportar")
+@app.get("/gestao/projecoes/exportar")
+async def export_cashflow(
+    request: Request,
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    category_id: str | None = Query(default=None),
+    store_id: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+    account_id: str | None = Query(default=None),
+    movement_type: str | None = Query(default=None, alias="type"),
+    subcategory: str | None = Query(default=None),
+    interested_party: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    entry_mode: str | None = Query(default=None),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        path = request.url.path
+        forced_entry_mode = "projecao" if path.endswith("/projecoes/exportar") else (entry_mode or "").strip()
         filters = {
             "date_from": parse_date_input(date_from),
             "date_to": parse_date_input(date_to),
@@ -511,7 +1082,12 @@ async def export_cashflow(request: Request, date_from: str | None = Query(defaul
             "store_id": _parse_optional_int(store_id),
             "status": status_value,
             "account_id": _parse_optional_int(account_id),
+            "subcategory": (subcategory or "").strip(),
+            "interested_party": (interested_party or "").strip(),
+            "search": (search or "").strip(),
+            "entry_mode": forced_entry_mode,
             "type": movement_type,
+            "source": "manual",
         }
         workbook = export_cashflow_workbook(db, filters=filters, generated_by=user.name)
         filename = f"fluxo_caixa_d3_{datetime.now().strftime('%Y-%m-%d_%H%M')}.xlsx"
@@ -545,28 +1121,15 @@ async def management_reports_page(request: Request):
             "reports.html",
             "gestao",
             "relatorios",
-            "Relatorios de gestao",
-            "Leitura financeira da operacao interna.",
+            "Relatórios de gestão",
+            "Leitura financeira da operação interna.",
             load_management_reports(db),
         )
 
 
 @app.get("/operacoes/relatorios", response_class=HTMLResponse)
 async def operational_reports_page(request: Request):
-    with _get_db() as db:
-        user = _require_user(request, db)
-        if not user:
-            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-        return _render(
-            request,
-            user,
-            "reports.html",
-            "operacoes",
-            "relatorios",
-            "Relatorios operacionais",
-            "Leitura das execucoes da equipe.",
-            load_operational_reports(db),
-        )
+    return RedirectResponse("/operacoes/gestor-tarefas/performance", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.get("/relatorios")
@@ -581,8 +1144,8 @@ async def reports_selector(request: Request):
             "reports_selector.html",
             "hub",
             "relatorios",
-            "Relatorios",
-            "Escolha a area antes de abrir os relatorios.",
+            "Relatórios",
+            "Escolha a área antes de abrir os relatórios.",
             {},
         )
 
@@ -596,13 +1159,16 @@ async def create_bpo_client(
     trade_name: str = Form(default=""),
     document: str = Form(default=""),
     segment: str = Form(default=""),
+    contracted_plan: str = Form(default=""),
+    sla_deadline_day: str | None = Form(default=None),
+    team_label: str = Form(default=""),
     responsible_user_id: str | None = Form(default=None),
     notes: str = Form(default=""),
 ):
     with _get_db() as db:
         user = _require_user(request, db)
         if not user or not has_permission(user, "edit"):
-            return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse("/operacoes/gestor-tarefas/clientes", status_code=status.HTTP_303_SEE_OTHER)
         await _validate_csrf(request)
         create_client(
             db,
@@ -610,11 +1176,14 @@ async def create_bpo_client(
             trade_name=trade_name or legal_name,
             document=document,
             segment=segment,
+            contracted_plan=contracted_plan,
+            sla_deadline_day=_parse_optional_int(sla_deadline_day),
+            team_label=team_label,
             responsible_user_id=_parse_optional_int(responsible_user_id),
             notes=notes,
         )
         _set_flash(request, "Cliente da carteira cadastrado.", "success")
-        return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse("/operacoes/gestor-tarefas/clientes", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/operacoes/clientes/{client_id}/atualizar")
@@ -625,6 +1194,9 @@ async def update_bpo_client(
     trade_name: str = Form(default=""),
     document: str = Form(default=""),
     segment: str = Form(default=""),
+    contracted_plan: str = Form(default=""),
+    sla_deadline_day: str | None = Form(default=None),
+    team_label: str = Form(default=""),
     responsible_user_id: str | None = Form(default=None),
     notes: str = Form(default=""),
     status_value: str = Form(default="ativo", alias="status"),
@@ -632,7 +1204,7 @@ async def update_bpo_client(
     with _get_db() as db:
         user = _require_user(request, db)
         if not user or not has_permission(user, "edit"):
-            return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse(f"/operacoes/gestor-tarefas/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
         await _validate_csrf(request)
         client = update_client(
             db,
@@ -641,15 +1213,18 @@ async def update_bpo_client(
             trade_name=trade_name,
             document=document,
             segment=segment,
+            contracted_plan=contracted_plan,
+            sla_deadline_day=_parse_optional_int(sla_deadline_day),
+            team_label=team_label,
             responsible_user_id=_parse_optional_int(responsible_user_id),
             notes=notes,
             status=status_value,
         )
         if not client:
             _set_flash(request, "Cliente não encontrado.", "error")
-            return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse("/operacoes/gestor-tarefas/clientes", status_code=status.HTTP_303_SEE_OTHER)
         _set_flash(request, "Cliente atualizado.", "success")
-        return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(f"/operacoes/gestor-tarefas/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/operacoes/clientes/{client_id}/arquivar")
@@ -657,14 +1232,98 @@ async def archive_bpo_client(request: Request, client_id: int):
     with _get_db() as db:
         user = _require_user(request, db)
         if not user or not has_permission(user, "edit"):
-            return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse(f"/operacoes/gestor-tarefas/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
         await _validate_csrf(request)
         client = archive_client(db, client_id=client_id)
         if not client:
             _set_flash(request, "Cliente não encontrado.", "error")
-            return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse("/operacoes/gestor-tarefas/clientes", status_code=status.HTTP_303_SEE_OTHER)
         _set_flash(request, "Cliente arquivado na carteira.", "success")
-        return RedirectResponse("/operacoes/clientes", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse("/operacoes/gestor-tarefas/clientes", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/gestor-tarefas/projetos")
+async def create_bpo_project(
+    request: Request,
+    client_id: str = Form(...),
+    name: str = Form(...),
+    project_type: str = Form(default="rotina_mensal"),
+    status_value: str = Form(default="ativo", alias="status"),
+    description: str = Form(default=""),
+    start_date: str | None = Form(default=None),
+    end_date: str | None = Form(default=None),
+    responsible_user_id: str | None = Form(default=None),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse("/operacoes/gestor-tarefas/projetos", status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        create_project(
+            db,
+            client_id=int(client_id),
+            name=name,
+            project_type=project_type,
+            status=status_value,
+            description=description,
+            start_date=parse_date_input(start_date),
+            end_date=parse_date_input(end_date),
+            responsible_user_id=_parse_optional_int(responsible_user_id),
+        )
+        _set_flash(request, "Projeto criado no gestor de tarefas.", "success")
+        return RedirectResponse("/operacoes/gestor-tarefas/projetos", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/gestor-tarefas/demandas")
+async def create_bpo_demand(
+    request: Request,
+    client_id: str = Form(...),
+    project_id: str | None = Form(default=None),
+    title: str = Form(...),
+    description: str = Form(default=""),
+    source: str = Form(default="manual"),
+    demand_type: str = Form(default="operacional"),
+    priority: str = Form(default="normal"),
+    status_value: str = Form(default="aberta", alias="status"),
+    due_date: str | None = Form(default=None),
+    responsible_user_id: str | None = Form(default=None),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse("/operacoes/gestor-tarefas/demandas", status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        create_demand(
+            db,
+            client_id=int(client_id),
+            project_id=_parse_optional_int(project_id),
+            title=title,
+            description=description,
+            source=source,
+            demand_type=demand_type,
+            priority=priority,
+            status=status_value,
+            due_date=parse_date_input(due_date),
+            responsible_user_id=_parse_optional_int(responsible_user_id),
+            created_by_user_id=user.id,
+        )
+        _set_flash(request, "Demanda registrada.", "success")
+        return RedirectResponse("/operacoes/gestor-tarefas/demandas", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/gestor-tarefas/demandas/{demand_id}/converter")
+async def convert_bpo_demand(request: Request, demand_id: int):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse("/operacoes/gestor-tarefas/demandas", status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        demand, task = convert_demand_to_task(db, demand_id=demand_id, user_id=user.id)
+        if not demand or not task:
+            _set_flash(request, "Demanda não encontrada.", "error")
+        else:
+            _set_flash(request, "Demanda convertida em tarefa.", "success")
+        return RedirectResponse("/operacoes/gestor-tarefas/demandas", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/operacoes/financeiro/contas-bancarias")
@@ -827,7 +1486,7 @@ async def create_bpo_contact(
     with _get_db() as db:
         user = _require_user(request, db)
         if not user or not has_permission(user, "edit"):
-            return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse(f"/operacoes/gestor-tarefas/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
         await _validate_csrf(request)
         create_client_contact(
             db,
@@ -839,13 +1498,14 @@ async def create_bpo_contact(
             is_primary=is_primary == "on",
         )
         _set_flash(request, "Contato salvo no cliente.", "success")
-        return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(f"/operacoes/gestor-tarefas/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/operacoes/clientes/{client_id}/tarefas")
 async def create_bpo_task(
     request: Request,
     client_id: int,
+    project_id: str | None = Form(default=None),
     title: str = Form(...),
     description: str = Form(default=""),
     task_template_id: str | None = Form(default=None),
@@ -857,11 +1517,12 @@ async def create_bpo_task(
     with _get_db() as db:
         user = _require_user(request, db)
         if not user or not has_permission(user, "edit"):
-            return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse(f"/operacoes/gestor-tarefas/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
         await _validate_csrf(request)
         create_task(
             db,
             client_id=client_id,
+            project_id=_parse_optional_int(project_id),
             title=title,
             description=description,
             created_by_user_id=user.id,
@@ -872,7 +1533,7 @@ async def create_bpo_task(
             priority=priority,
         )
         _set_flash(request, "Tarefa operacional criada.", "success")
-        return RedirectResponse(f"/operacoes/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(f"/operacoes/gestor-tarefas/clientes/{client_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/operacoes/tarefas/{task_id}/atualizar")
@@ -880,6 +1541,7 @@ async def update_bpo_task(
     request: Request,
     task_id: int,
     redirect_to: str = Form(default="/operacoes/dashboard"),
+    project_id: str | None = Form(default=None),
     title: str = Form(...),
     description: str = Form(default=""),
     competence_date: str | None = Form(default=None),
@@ -895,6 +1557,7 @@ async def update_bpo_task(
         task = update_task(
             db,
             task_id=task_id,
+            project_id=_parse_optional_int(project_id),
             title=title,
             description=description,
             assigned_user_id=_parse_optional_int(assigned_user_id),
@@ -928,6 +1591,44 @@ async def change_bpo_task_status(
         else:
             _set_flash(request, "Status da tarefa atualizado.", "success")
         return RedirectResponse(_normalize_redirect_target(redirect_to), status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/tarefas/{task_id}/tempo/iniciar")
+async def start_bpo_task_time(
+    request: Request,
+    task_id: int,
+    redirect_to: str = Form(default="/operacoes/gestor-tarefas/tarefas"),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(_normalize_redirect_target(redirect_to, "/operacoes/gestor-tarefas/tarefas"), status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        entry = start_task_time_entry(db, task_id=task_id, user_id=user.id)
+        if not entry:
+            _set_flash(request, "Tarefa não encontrada para iniciar apontamento.", "error")
+        else:
+            _set_flash(request, "Tempo iniciado.", "success")
+        return RedirectResponse(_normalize_redirect_target(redirect_to, "/operacoes/gestor-tarefas/tarefas"), status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/operacoes/tempo/{entry_id}/pausar")
+async def stop_bpo_task_time(
+    request: Request,
+    entry_id: int,
+    redirect_to: str = Form(default="/operacoes/gestor-tarefas/tempo"),
+):
+    with _get_db() as db:
+        user = _require_user(request, db)
+        if not user or not has_permission(user, "edit"):
+            return RedirectResponse(_normalize_redirect_target(redirect_to, "/operacoes/gestor-tarefas/tempo"), status_code=status.HTTP_303_SEE_OTHER)
+        await _validate_csrf(request)
+        entry = stop_task_time_entry(db, entry_id=entry_id)
+        if not entry:
+            _set_flash(request, "Apontamento não encontrado.", "error")
+        else:
+            _set_flash(request, "Tempo pausado.", "success")
+        return RedirectResponse(_normalize_redirect_target(redirect_to, "/operacoes/gestor-tarefas/tempo"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/operacoes/tarefas/{task_id}/excluir")
@@ -1122,8 +1823,8 @@ async def conciliar(
                 "summary": DOWNLOADS[token]["summary"],
                 "history": load_history(db, limit=5),
                 "client_name": client.trade_name or client.legal_name,
-                "run_period": f"{selected_period_start.strftime('%d/%m/%Y')} ate {selected_period_end.strftime('%d/%m/%Y')}",
-                "task_redirect": f"/operacoes/clientes/{client.id}",
+                "run_period": f"{selected_period_start.strftime('%d/%m/%Y')} até {selected_period_end.strftime('%d/%m/%Y')}",
+                "task_redirect": f"/operacoes/gestor-tarefas/clientes/{client.id}",
                 "conciliation_run_id": run.id,
             },
         )
@@ -1141,35 +1842,62 @@ async def download(request: Request, token: str):
     return FileResponse(path=item["path"], media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=str(item["download_name"]), background=BackgroundTask(lambda: shutil.rmtree(str(item["tempdir"]), ignore_errors=True)))
 
 
+@app.post("/gestao/financeiro/lancamentos")
 @app.post("/fluxo-caixa/lancamentos")
-async def create_cashflow_entry(request: Request, transaction_date: str = Form(...), type: str = Form(...), description: str = Form(default=""), category_id: str | None = Form(default=None), subcategory: str = Form(default=""), amount: str = Form(...), payment_method_id: str | None = Form(default=None), bank_account_id: str | None = Form(default=None), store_id: str | None = Form(default=None), status_value: str = Form(..., alias="status"), planned_date: str | None = Form(default=None), realized_date: str | None = Form(default=None)):
+async def create_cashflow_entry(request: Request):
     with _get_db() as db:
         user = _require_user(request, db)
         if not user:
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         if not has_permission(user, "edit"):
             _set_flash(request, "Seu perfil não possui permissão para criar lançamentos.", "error")
-            return RedirectResponse("/gestao/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse("/gestao/contas", status_code=status.HTTP_303_SEE_OTHER)
         await _validate_csrf(request)
-        normalized_date = parse_date_input(transaction_date) or date.today()
-        normalized_status = status_value if status_value in {"previsto", "realizado"} else "previsto"
-        normalized_type = type if type in {"ENTRADA", "SAIDA"} else "ENTRADA"
-        normalized_description = _normalize_text_input(description)
-        if not normalized_description:
-            normalized_description = _normalize_text_input(subcategory) or "Lançamento manual"
-        normalized_subcategory = _normalize_text_input(subcategory)
+        form = await request.form()
+        try:
+            normalized_date = parse_date_input(str(form.get("transaction_date") or "")) or date.today()
+            normalized_amount = safe_decimal(str(form.get("amount") or "0"))
+            schedule_rows, projection_period = parse_schedule_rows(
+                mode=str(form.get("entry_mode") or "avista"),
+                transaction_date=normalized_date,
+                amount=normalized_amount,
+                installment_count=max(int(str(form.get("installment_count") or "2")), 1),
+                schedule_dates=[str(item) for item in form.getlist("schedule_date") if str(item).strip()],
+                schedule_amounts=[str(item) for item in form.getlist("schedule_amount") if str(item).strip()],
+                schedule_labels=[str(item) for item in form.getlist("schedule_label") if str(item).strip()],
+                projection_start=parse_date_input(str(form.get("projection_start") or "")),
+                projection_end=parse_date_input(str(form.get("projection_end") or "")),
+            )
+            created_rows = create_internal_finance_entries(
+                db,
+                user_id=user.id,
+                transaction_type=str(form.get("type") or "SAIDA"),
+                entry_mode=str(form.get("entry_mode") or "avista"),
+                description=_normalize_text_input(str(form.get("description") or "")),
+                interested_party=_normalize_text_input(str(form.get("interested_party") or "")),
+                category_id=_parse_optional_int(form.get("category_id")),
+                subcategory=_normalize_text_input(str(form.get("subcategory") or "")),
+                amount=normalized_amount,
+                payment_method_id=_parse_optional_int(form.get("payment_method_id")),
+                bank_account_id=_parse_optional_int(form.get("bank_account_id")),
+                store_id=_parse_optional_int(form.get("store_id")),
+                status=str(form.get("status") or "previsto"),
+                schedule_rows=schedule_rows,
+                projection_period=projection_period,
+            )
+        except (ConciliationUserError, ValueError) as exc:
+            _set_flash(request, str(exc), "error")
+            return RedirectResponse("/gestao/financeiro/novo", status_code=status.HTTP_303_SEE_OTHER)
 
-        normalized_planned = parse_date_input(planned_date) or normalized_date
-        normalized_realized = parse_date_input(realized_date) or (normalized_date if normalized_status == "realizado" else None)
-        if normalized_status == "previsto":
-            normalized_realized = None
-
-        db.add(FinancialTransaction(transaction_date=normalized_date, type=normalized_type, description=normalized_description, category_id=_parse_optional_int(category_id), subcategory=normalized_subcategory, amount=safe_decimal(amount), payment_method_id=_parse_optional_int(payment_method_id), bank_account_id=_parse_optional_int(bank_account_id), store_id=_parse_optional_int(store_id), source="manual", status=normalized_status, planned_date=normalized_planned, realized_date=normalized_realized, created_by_user_id=user.id))
-        db.commit()
-        _set_flash(request, "Lançamento financeiro criado.", "success")
-        return RedirectResponse("/gestao/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
+        clear_cashflow_caches()
+        if len(created_rows) == 1:
+            _set_flash(request, "Lançamento financeiro criado.", "success")
+        else:
+            _set_flash(request, f"{len(created_rows)} lançamentos financeiros criados.", "success")
+        return RedirectResponse("/gestao/contas", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@app.post("/gestao/financeiro/lancamentos/{transaction_id}/excluir")
 @app.post("/fluxo-caixa/lancamentos/{transaction_id}/excluir")
 async def delete_cashflow_entry(request: Request, transaction_id: int):
     with _get_db() as db:
@@ -1178,16 +1906,19 @@ async def delete_cashflow_entry(request: Request, transaction_id: int):
             return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         if not has_permission(user, "edit"):
             _set_flash(request, "Seu perfil não possui permissão para excluir lançamentos.", "error")
-            return RedirectResponse("/gestao/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse("/gestao/contas", status_code=status.HTTP_303_SEE_OTHER)
         await _validate_csrf(request)
+        form = await request.form()
+        redirect_to = _normalize_redirect_target(str(form.get("redirect_to") or "/gestao/contas"), "/gestao/contas")
         item = db.get(FinancialTransaction, transaction_id)
-        if item and item.source != "conciliacao":
+        if item:
             db.delete(item)
             db.commit()
+            clear_cashflow_caches()
             _set_flash(request, "Lançamento removido.", "success")
         else:
             _set_flash(request, "Lançamento não encontrado ou bloqueado.", "error")
-        return RedirectResponse("/gestao/fluxo-caixa", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)
 
 
 

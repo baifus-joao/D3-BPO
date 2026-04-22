@@ -164,3 +164,4 @@ Quebrar a Fase 2A em entregas executáveis, para permitir implementação increm
 - [[financeiro/fase-2a-base-e-contas-a-pagar]]
 - [[processos/backlog-fase-2-erp-clientes]]
 - [[processos/uso-codex]]
+- [[processos/pendencias-pos-refatoracao-e-deploy]]

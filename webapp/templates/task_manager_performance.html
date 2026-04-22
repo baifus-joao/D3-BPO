@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_task_manager_nav.html" %}
+<section class="grid two-col">
+    <article class="card">
+        <div class="card-header"><div><p class="section-kicker">Colaboradores</p><h2>Performance por colaborador</h2></div></div>
+        <div class="table-shell">
+            {% for item in performance_user_rows %}
+            <div class="table-row table-row-rich">
+                <span>{{ item.label }}</span>
+                <span>{{ item.hours }}</span>
+                <span>{{ item.done }} concluidas</span>
+                <span>{{ item.late }} atrasadas</span>
+            </div>
+            {% else %}
+            <p class="empty-state">Sem dados por colaborador.</p>
+            {% endfor %}
+        </div>
+    </article>
+    <article class="card">
+        <div class="card-header"><div><p class="section-kicker">Clientes</p><h2>Performance por cliente</h2></div></div>
+        <div class="table-shell">
+            {% for item in performance_client_rows %}
+            <div class="table-row table-row-rich">
+                <span>{{ item.label }}</span>
+                <span>{{ item.hours }}</span>
+                <span>{{ item.tasks }} tarefas</span>
+                <span>{{ item.sla_hits }} dentro do SLA</span>
+            </div>
+            {% else %}
+            <p class="empty-state">Sem dados por cliente.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

@@ -10,10 +10,11 @@ from types import SimpleNamespace
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from sqlalchemy import literal, select, union_all
+from sqlalchemy import literal, or_, select, union_all
 from sqlalchemy.orm import Session
 
 from .erp import transaction_query
+from .internal_finance_catalog import display_financial_category, predefined_subcategory_map
 from .models import BankAccount, FinancialCategory, FinancialTransaction, PaymentMethod, Store
 
 
@@ -73,35 +74,106 @@ def load_cashflow_reference_lists(db: Session) -> dict[str, list[object]]:
     references = union_all(
         select(literal("stores").label("kind"), Store.id.label("id"), Store.name.label("name")).where(Store.is_active.is_(True)),
         select(literal("accounts").label("kind"), BankAccount.id.label("id"), BankAccount.name.label("name")).where(BankAccount.is_active.is_(True)),
-        select(literal("categories").label("kind"), FinancialCategory.id.label("id"), FinancialCategory.name.label("name")).where(FinancialCategory.is_active.is_(True)),
         select(literal("payment_methods").label("kind"), PaymentMethod.id.label("id"), PaymentMethod.name.label("name")).where(PaymentMethod.is_active.is_(True)),
     ).subquery()
 
-    rows = db.execute(select(references.c.kind, references.c.id, references.c.name).order_by(references.c.kind, references.c.name)).all()
+    rows = db.execute(
+        select(references.c.kind, references.c.id, references.c.name).order_by(references.c.kind, references.c.name)
+    ).all()
     data = {"stores": [], "accounts": [], "categories": [], "payment_methods": []}
     for row in rows:
         data[row.kind].append(SimpleNamespace(id=row.id, name=row.name))
+    categories = db.scalars(
+        select(FinancialCategory)
+        .where(FinancialCategory.is_active.is_(True))
+        .order_by(FinancialCategory.type.asc(), FinancialCategory.name.asc())
+    ).all()
+    data["categories"] = [
+        SimpleNamespace(
+            id=item.id,
+            name=display_financial_category(item.name),
+            raw_name=item.name,
+            type=item.type,
+        )
+        for item in categories
+    ]
 
     _cashflow_reference_cache["expires_at"] = now + REFERENCE_CACHE_TTL_SECONDS
     _cashflow_reference_cache["value"] = data
     return data
 
 
+def clear_cashflow_caches() -> None:
+    _cashflow_reference_cache["expires_at"] = 0.0
+    _cashflow_reference_cache["value"] = None
+    _cashflow_form_state_cache["expires_at"] = 0.0
+    _cashflow_form_state_cache["value"] = None
+
+
+def _serialize_financial_row(item: FinancialTransaction, *, format_currency, format_short_date) -> dict[str, object]:
+    installment_label = "-"
+    if item.entry_mode == "parcelado" and item.installment_total:
+        installment_label = f"{item.installment_number}/{item.installment_total}"
+    elif item.entry_mode == "projecao" and item.projection_label:
+        installment_label = item.projection_label
+    return {
+        "id": item.id,
+        "date": format_short_date(item.transaction_date),
+        "type": item.type,
+        "description": item.description,
+        "interested_party": item.interested_party or "-",
+        "category": display_financial_category(item.category.name) if item.category else "-",
+        "subcategory": item.subcategory or "-",
+        "amount": format_currency(item.amount),
+        "amount_value": Decimal(item.amount),
+        "status": item.status,
+        "status_class": "success" if item.status == "realizado" else "warning",
+        "entry_mode": item.entry_mode or "avista",
+        "entry_mode_label": "Parcelado" if item.entry_mode == "parcelado" else "Projecao" if item.entry_mode == "projecao" else "A vista",
+        "installment_label": installment_label,
+        "account": item.bank_account.name if item.bank_account else "-",
+        "store": item.store.name if item.store else "-",
+        "source": item.source,
+        "planned_date": format_short_date(item.planned_date),
+        "realized_date": format_short_date(item.realized_date),
+        "editable": item.source != "conciliacao",
+        "detail_url": f"/gestao/financeiro/lancamentos/{item.id}",
+        "duplicate_url": f"/gestao/financeiro/novo?duplicate_id={item.id}",
+    }
+
+
 def apply_cashflow_filters(query, filters: dict[str, object]):
-    if filters["date_from"]:
+    if filters.get("source"):
+        query = query.where(FinancialTransaction.source == filters["source"])
+    if filters.get("date_from"):
         query = query.where(FinancialTransaction.transaction_date >= filters["date_from"])
-    if filters["date_to"]:
+    if filters.get("date_to"):
         query = query.where(FinancialTransaction.transaction_date <= filters["date_to"])
-    if filters["category_id"]:
+    if filters.get("category_id"):
         query = query.where(FinancialTransaction.category_id == filters["category_id"])
-    if filters["store_id"]:
+    if filters.get("store_id"):
         query = query.where(FinancialTransaction.store_id == filters["store_id"])
-    if filters["status"]:
+    if filters.get("status"):
         query = query.where(FinancialTransaction.status == filters["status"])
-    if filters["account_id"]:
+    if filters.get("account_id"):
         query = query.where(FinancialTransaction.bank_account_id == filters["account_id"])
-    if filters["type"]:
+    if filters.get("type"):
         query = query.where(FinancialTransaction.type == filters["type"])
+    if filters.get("subcategory"):
+        query = query.where(FinancialTransaction.subcategory.ilike(f"%{filters['subcategory']}%"))
+    if filters.get("interested_party"):
+        query = query.where(FinancialTransaction.interested_party.ilike(f"%{filters['interested_party']}%"))
+    if filters.get("entry_mode"):
+        query = query.where(FinancialTransaction.entry_mode == filters["entry_mode"])
+    if filters.get("search"):
+        term = f"%{filters['search']}%"
+        query = query.where(
+            or_(
+                FinancialTransaction.description.ilike(term),
+                FinancialTransaction.interested_party.ilike(term),
+                FinancialTransaction.subcategory.ilike(term),
+            )
+        )
     return query
 
 
@@ -168,7 +240,7 @@ def load_cashflow_overview(
 
     category_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     for item in all_filtered:
-        label = item.category_name or "Sem categoria"
+        label = display_financial_category(item.category_name or "Sem categoria")
         category_totals[label] += Decimal(item.amount)
     category_total_sum = sum(category_totals.values(), Decimal("0")) or Decimal("1")
     colors = ["#22ffc4", "#7aa2ff", "#ffd166", "#ff8a65", "#b48fff", "#4dd0e1"]
@@ -189,22 +261,7 @@ def load_cashflow_overview(
         cumulative += percentage
 
     rows = [
-        {
-            "id": item.id,
-            "date": format_short_date(item.transaction_date),
-            "type": item.type,
-            "description": item.description,
-            "category": item.category.name if item.category else "-",
-            "amount": format_currency(item.amount),
-            "status": item.status,
-            "status_class": "success" if item.status == "realizado" else "warning",
-            "account": item.bank_account.name if item.bank_account else "-",
-            "store": item.store.name if item.store else "-",
-            "source": item.source,
-            "planned_date": format_short_date(item.planned_date),
-            "realized_date": format_short_date(item.realized_date),
-            "editable": item.source != "conciliacao",
-        }
+        _serialize_financial_row(item, format_currency=format_currency, format_short_date=format_short_date)
         for item in transactions
     ]
 
@@ -216,6 +273,8 @@ def load_cashflow_overview(
             "resultado_periodo": resultado,
         },
         "transactions": rows,
+        "total_count": len(all_filtered),
+        "has_more": len(all_filtered) > (page * page_size),
         "page": page,
         "line_chart": {"labels": line_labels, "points": build_line_points(line_values)},
         "bar_chart": [
@@ -426,7 +485,9 @@ def build_cashflow_form_state(db: Session) -> dict[str, object]:
 
     subcategories_by_category: dict[str, list[str]] = defaultdict(list)
     description_suggestions: list[dict[str, object]] = []
+    interested_suggestions: list[str] = []
     seen_descriptions: set[str] = set()
+    seen_interested: set[str] = set()
 
     ranked_descriptions: dict[tuple[str, int | None, str], dict[str, object]] = {}
     for item in recent_transactions:
@@ -443,7 +504,7 @@ def build_cashflow_form_state(db: Session) -> dict[str, object]:
             {
                 "description": normalized_description,
                 "category_id": item.category_id,
-                "category_name": category_name,
+                "category_name": display_financial_category(category_name),
                 "subcategory": item.subcategory.strip(),
                 "usage_count": 0,
             },
@@ -462,11 +523,98 @@ def build_cashflow_form_state(db: Session) -> dict[str, object]:
         if len(description_suggestions) >= 12:
             break
 
+    interested_rows = db.scalars(
+        select(FinancialTransaction.interested_party)
+        .where(FinancialTransaction.interested_party != "")
+        .order_by(FinancialTransaction.interested_party.asc())
+        .limit(200)
+    ).all()
+    for item in interested_rows:
+        normalized = str(item).strip()
+        key = normalized.lower()
+        if not normalized or key in seen_interested:
+            continue
+        seen_interested.add(key)
+        interested_suggestions.append(normalized)
+        if len(interested_suggestions) >= 30:
+            break
+
+    for category_name, subcategories in predefined_subcategory_map().items():
+        for subcategory in subcategories:
+            if subcategory not in subcategories_by_category[category_name]:
+                subcategories_by_category[category_name].append(subcategory)
+
     value = {
         "today": date.today().strftime("%Y-%m-%d"),
         "subcategory_map": dict(subcategories_by_category),
         "description_suggestions": description_suggestions,
+        "interested_suggestions": interested_suggestions,
     }
     _cashflow_form_state_cache["expires_at"] = now + FORM_STATE_CACHE_TTL_SECONDS
     _cashflow_form_state_cache["value"] = value
     return value
+
+
+def load_internal_finance_overview(
+    db: Session,
+    *,
+    filters: dict[str, object],
+    format_currency,
+    format_short_date,
+    row_limit_per_report: int = 50,
+) -> dict[str, object]:
+    query = apply_cashflow_filters(
+        transaction_query(db)
+        .where(FinancialTransaction.source == "manual")
+        .order_by(FinancialTransaction.transaction_date.desc(), FinancialTransaction.id.desc()),
+        filters,
+    )
+    transactions = db.scalars(query).all()
+
+    realized_until_today = [
+        item
+        for item in transactions
+        if item.status == "realizado" and (item.realized_date or item.planned_date or item.transaction_date) <= date.today()
+    ]
+    saldo_atual = sum(
+        (Decimal(item.amount) if item.type == "ENTRADA" else -Decimal(item.amount) for item in realized_until_today),
+        Decimal("0"),
+    )
+    entradas = sum((Decimal(item.amount) for item in transactions if item.type == "ENTRADA"), Decimal("0"))
+    saidas = sum((Decimal(item.amount) for item in transactions if item.type == "SAIDA"), Decimal("0"))
+
+    all_payable_rows = [
+        _serialize_financial_row(item, format_currency=format_currency, format_short_date=format_short_date)
+        for item in transactions
+        if item.type == "SAIDA"
+    ]
+    all_receivable_rows = [
+        _serialize_financial_row(item, format_currency=format_currency, format_short_date=format_short_date)
+        for item in transactions
+        if item.type == "ENTRADA"
+    ]
+    payable_rows = all_payable_rows[:row_limit_per_report]
+    receivable_rows = all_receivable_rows[:row_limit_per_report]
+
+    return {
+        "summary": {
+            "saldo_atual": saldo_atual,
+            "entradas_periodo": entradas,
+            "saidas_periodo": saidas,
+            "resultado_periodo": entradas - saidas,
+        },
+        "payables_report": {
+            "rows": payable_rows,
+            "count": len(all_payable_rows),
+            "total": sum((item["amount_value"] for item in all_payable_rows), Decimal("0")),
+            "pending_count": len([item for item in all_payable_rows if item["status"] == "previsto"]),
+            "has_more": len(all_payable_rows) > len(payable_rows),
+        },
+        "receivables_report": {
+            "rows": receivable_rows,
+            "count": len(all_receivable_rows),
+            "total": sum((item["amount_value"] for item in all_receivable_rows), Decimal("0")),
+            "pending_count": len([item for item in all_receivable_rows if item["status"] == "previsto"]),
+            "has_more": len(all_receivable_rows) > len(receivable_rows),
+        },
+    }

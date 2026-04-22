@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -15,9 +16,13 @@ from .bpo_models import (
     BPOClientContact,
     BPOConciliationItem,
     BPOConciliationRun,
+    BPODemand,
+    BPOProject,
     BPOTask,
     BPOTaskEvent,
+    BPOTaskTimeEntry,
     BPOTaskTemplate,
+    BPORecurringRoutine,
 )
 from .models import User
 from .time_utils import utcnow
@@ -25,9 +30,9 @@ from .time_utils import utcnow
 
 TASK_STATUS_LABELS = {
     "pendente": "Pendente",
-    "em_execucao": "Em execucao",
-    "aguardando_cliente": "Aguardando cliente",
-    "concluida": "Concluida",
+    "em_execucao": "Em execução",
+    "aguardando_cliente": "Em revisão",
+    "concluida": "Concluída",
     "atrasada": "Atrasada",
 }
 
@@ -41,7 +46,7 @@ TASK_STATUS_CLASS = {
 
 CLIENT_STATUS_LABELS = {
     "ativo": "Ativo",
-    "implantacao": "Implantacao",
+    "implantacao": "Implantação",
     "pausado": "Pausado",
     "inativo": "Inativo",
 }
@@ -52,9 +57,43 @@ PRIORITY_LABELS = {
     "alta": "Alta",
 }
 
+PROJECT_TYPE_LABELS = {
+    "implantacao": "Implantação",
+    "rotina_mensal": "Rotina mensal",
+    "organizacao_financeira": "Organização financeira",
+    "conciliacao": "Conciliação",
+    "fiscal": "Fiscal",
+    "operacional": "Operacional",
+}
+
+PROJECT_STATUS_LABELS = {
+    "ativo": "Ativo",
+    "pausado": "Pausado",
+    "concluido": "Concluído",
+}
+
+DEMAND_TYPE_LABELS = {
+    "financeiro": "Financeiro",
+    "fiscal": "Fiscal",
+    "operacional": "Operacional",
+}
+
+DEMAND_STATUS_LABELS = {
+    "aberta": "Aberta",
+    "triagem": "Triagem",
+    "convertida": "Convertida",
+    "concluida": "Concluída",
+}
+
+DEMAND_SOURCE_LABELS = {
+    "manual": "Manual",
+    "whatsapp": "WhatsApp",
+    "email": "E-mail",
+}
+
 PENDING_ITEM_STATUS_LABELS = {
     "aberto": "Aberto",
-    "em_analise": "Em analise",
+    "em_analise": "Em análise",
     "aguardando_cliente": "Aguardando cliente",
     "resolvido": "Resolvido",
     "descartado": "Descartado",
@@ -80,7 +119,7 @@ def _optional_decimal(value) -> Decimal | None:
 
 def seed_bpo_data(db: Session) -> None:
     defaults = [
-        ("Conciliacao mensal", "conciliacao", 2, True),
+        ("Conciliação mensal", "conciliacao", 2, True),
         ("Fechamento financeiro", "fechamento", 3, True),
         ("Contas a pagar", "pagamentos", 1, True),
     ]
@@ -108,8 +147,28 @@ def _task_status(task: BPOTask) -> str:
     return task.status
 
 
+def _task_board_column(status: str) -> str:
+    if status in {"pendente", "atrasada"}:
+        return "a_fazer"
+    if status == "em_execucao":
+        return "em_andamento"
+    if status == "aguardando_cliente":
+        return "em_revisao"
+    return "concluidas"
+
+
+def _priority_tone(priority: str) -> str:
+    return {
+        "alta": "error",
+        "normal": "warning",
+        "baixa": "success",
+    }.get(priority, "neutral")
+
+
 def _serialize_task(task: BPOTask) -> dict[str, object]:
     effective_status = _task_status(task)
+    total_seconds = sum(entry.duration_seconds for entry in task.time_entries if entry.ended_at)
+    active_entry_id = next((entry.id for entry in task.time_entries if entry.ended_at is None), None)
     return {
         "id": task.id,
         "title": task.title,
@@ -121,14 +180,22 @@ def _serialize_task(task: BPOTask) -> dict[str, object]:
         "status_class": TASK_STATUS_CLASS.get(effective_status, "neutral"),
         "priority": task.priority,
         "priority_label": PRIORITY_LABELS.get(task.priority, task.priority.title()),
+        "priority_tone": _priority_tone(task.priority),
         "assigned_user_id": task.assigned_user_id,
         "client_name": task.client.trade_name or task.client.legal_name,
         "client_id": task.client_id,
-        "assignee_name": task.assigned_user.name if task.assigned_user else "Sem responsavel",
+        "project_id": task.project_id,
+        "project_name": task.project.name if task.project else "Sem projeto",
+        "assignee_name": task.assigned_user.name if task.assigned_user else "Sem responsável",
         "due_date": task.due_date.strftime("%d/%m/%Y") if task.due_date else "-",
         "due_date_iso": task.due_date.isoformat() if task.due_date else "",
         "competence_date": task.competence_date.strftime("%m/%Y") if task.competence_date else "-",
         "competence_date_iso": task.competence_date.isoformat() if task.competence_date else "",
+        "logged_time_seconds": total_seconds,
+        "logged_time_label": _duration_label(total_seconds),
+        "active_time_entry_id": active_entry_id,
+        "board_column": _task_board_column(effective_status),
+        "edit_href": f"/operacoes/gestor-tarefas/clientes/{task.client_id}",
         "can_start": effective_status in {"pendente", "atrasada"},
         "can_wait": effective_status in {"pendente", "em_execucao", "atrasada"},
         "can_complete": effective_status in {"em_execucao", "aguardando_cliente", "atrasada"},
@@ -144,14 +211,110 @@ def _serialize_client(client: BPOClient, *, task_count: int = 0, overdue_count: 
         "notes": client.notes,
         "document": client.document or "-",
         "segment": client.segment or "-",
+        "contracted_plan": client.contracted_plan or "-",
+        "sla_deadline_day": client.sla_deadline_day,
+        "sla_label": f"Fechamento até dia {client.sla_deadline_day}" if client.sla_deadline_day else "Não definido",
+        "team_label": client.team_label or "-",
         "status": client.status,
         "status_label": CLIENT_STATUS_LABELS.get(client.status, client.status.title()),
         "responsible_user_id": client.responsible_user_id,
-        "responsible_name": client.responsible_user.name if client.responsible_user else "Sem responsavel",
+        "responsible_name": client.responsible_user.name if client.responsible_user else "Sem responsável",
         "task_count": task_count,
         "overdue_count": overdue_count,
-        "last_run_at": last_run_at.strftime("%d/%m/%Y %H:%M") if last_run_at else "Sem conciliacao",
+        "last_run_at": last_run_at.strftime("%d/%m/%Y %H:%M") if last_run_at else "Sem conciliação",
         "primary_contact": primary_contact,
+    }
+
+
+def _serialize_project(project: BPOProject) -> dict[str, object]:
+    open_tasks = [task for task in project.tasks if _task_status(task) != "concluida"]
+    open_demands = [demand for demand in project.demands if demand.status not in {"concluida", "convertida"}]
+    done_tasks = [task for task in project.tasks if _task_status(task) == "concluida"]
+    overdue_count = sum(1 for task in open_tasks if _task_status(task) == "atrasada")
+    total_tasks = len(project.tasks)
+    progress_percent = int(round((len(done_tasks) / total_tasks) * 100)) if total_tasks else 0
+    return {
+        "id": project.id,
+        "name": project.name,
+        "client_id": project.client_id,
+        "client_name": project.client.trade_name or project.client.legal_name,
+        "project_type": project.project_type,
+        "project_type_label": PROJECT_TYPE_LABELS.get(project.project_type, project.project_type.replace("_", " ").title()),
+        "status": project.status,
+        "status_label": PROJECT_STATUS_LABELS.get(project.status, project.status.title()),
+        "description": project.description,
+        "responsible_user_id": project.responsible_user_id,
+        "responsible_name": project.responsible_user.name if project.responsible_user else "Sem responsável",
+        "start_date": project.start_date.strftime("%d/%m/%Y") if project.start_date else "-",
+        "end_date": project.end_date.strftime("%d/%m/%Y") if project.end_date else "-",
+        "start_date_iso": project.start_date.isoformat() if project.start_date else "",
+        "end_date_iso": project.end_date.isoformat() if project.end_date else "",
+        "task_count": len(open_tasks),
+        "demand_count": len(open_demands),
+        "done_task_count": len(done_tasks),
+        "overdue_count": overdue_count,
+        "progress_percent": progress_percent,
+        "tasks_href": f"/operacoes/gestor-tarefas/tarefasproject_id={project.id}",
+    }
+
+
+def _duration_label(total_seconds: int) -> str:
+    minutes = int(total_seconds // 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes:02d}m"
+
+
+def _serialize_time_entry(entry: BPOTaskTimeEntry) -> dict[str, object]:
+    active = entry.ended_at is None
+    duration = entry.duration_seconds
+    if active:
+        now = utcnow()
+        if entry.started_at.tzinfo is None and now.tzinfo is not None:
+            now = now.replace(tzinfo=None)
+        elif entry.started_at.tzinfo is not None and now.tzinfo is None:
+            now = now.replace(tzinfo=entry.started_at.tzinfo)
+        duration = max(int((now - entry.started_at).total_seconds()), duration)
+    return {
+        "id": entry.id,
+        "task_id": entry.task_id,
+        "task_title": entry.task.title,
+        "client_name": entry.task.client.trade_name or entry.task.client.legal_name,
+        "user_name": entry.user.name if entry.user else "Sem responsável",
+        "started_at": entry.started_at.strftime("%d/%m/%Y %H:%M"),
+        "ended_at": entry.ended_at.strftime("%d/%m/%Y %H:%M") if entry.ended_at else "Em andamento",
+        "duration_seconds": duration,
+        "duration_label": _duration_label(duration),
+        "note": entry.note,
+        "is_active": active,
+    }
+
+
+def _serialize_demand(demand: BPODemand) -> dict[str, object]:
+    return {
+        "id": demand.id,
+        "title": demand.title,
+        "description": demand.description,
+        "client_id": demand.client_id,
+        "client_name": demand.client.trade_name or demand.client.legal_name,
+        "project_id": demand.project_id,
+        "project_name": demand.project.name if demand.project else "Sem projeto",
+        "source": demand.source,
+        "source_label": DEMAND_SOURCE_LABELS.get(demand.source, demand.source.title()),
+        "demand_type": demand.demand_type,
+        "demand_type_label": DEMAND_TYPE_LABELS.get(demand.demand_type, demand.demand_type.title()),
+        "priority": demand.priority,
+        "priority_label": PRIORITY_LABELS.get(demand.priority, demand.priority.title()),
+        "priority_tone": _priority_tone(demand.priority),
+        "status": demand.status,
+        "status_label": DEMAND_STATUS_LABELS.get(demand.status, demand.status.title()),
+        "responsible_name": demand.responsible_user.name if demand.responsible_user else "Sem responsável",
+        "responsible_user_id": demand.responsible_user_id,
+        "due_date": demand.due_date.strftime("%d/%m/%Y") if demand.due_date else "-",
+        "due_date_iso": demand.due_date.isoformat() if demand.due_date else "",
+        "converted_task_id": demand.converted_task_id,
+        "created_at": demand.created_at.strftime("%d/%m/%Y %H:%M"),
+        "can_convert": demand.converted_task_id is None and demand.status in {"aberta", "triagem"},
+        "pipeline_column": demand.status if demand.status in {"aberta", "triagem", "convertida", "concluida"} else "aberta",
     }
 
 
@@ -169,7 +332,7 @@ def _serialize_pending_item(item: BPOConciliationItem) -> dict[str, object]:
         "detail": item.detail or "",
         "client_id": client.id if client else None,
         "client_name": (client.trade_name or client.legal_name) if client else "Cliente removido",
-        "period": f"{run.period_start.strftime('%d/%m/%Y')} ate {run.period_end.strftime('%d/%m/%Y')}" if run else "-",
+        "period": f"{run.period_start.strftime('%d/%m/%Y')} até {run.period_end.strftime('%d/%m/%Y')}" if run else "-",
         "sale_date": item.sale_date.strftime("%d/%m/%Y") if item.sale_date else "-",
         "expected_payment_date": item.expected_payment_date.strftime("%d/%m/%Y") if item.expected_payment_date else "-",
         "gross_amount": item.gross_amount,
@@ -186,10 +349,13 @@ def load_client_reference_lists(db: Session) -> dict[str, object]:
         .order_by(BPOClient.trade_name.asc(), BPOClient.legal_name.asc())
     ).all()
     users = db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.name.asc())).all()
+    projects = db.scalars(
+        select(BPOProject).options(selectinload(BPOProject.client), selectinload(BPOProject.responsible_user)).order_by(BPOProject.name.asc())
+    ).all()
     templates = db.scalars(
         select(BPOTaskTemplate).where(BPOTaskTemplate.is_active.is_(True)).order_by(BPOTaskTemplate.name.asc())
     ).all()
-    return {"clients": clients, "users": users, "task_templates": templates}
+    return {"clients": clients, "users": users, "task_templates": templates, "projects": projects}
 
 
 def load_operations_queue(db: Session, *, filters: dict[str, object] | None = None) -> dict[str, object]:
@@ -268,7 +434,7 @@ def load_operations_queue(db: Session, *, filters: dict[str, object] | None = No
         {
             "id": run.id,
             "client_name": run.client.trade_name or run.client.legal_name,
-            "period": f"{run.period_start.strftime('%d/%m/%Y')} ate {run.period_end.strftime('%d/%m/%Y')}",
+            "period": f"{run.period_start.strftime('%d/%m/%Y')} até {run.period_end.strftime('%d/%m/%Y')}",
             "status": run.status,
             "status_class": "success" if run.status == "concluida" else "warning",
             "divergences": run.total_divergencias,
@@ -324,7 +490,17 @@ def load_clients_overview(db: Session, *, filters: dict[str, object] | None = No
         overdue_count = sum(1 for task in open_tasks if task.due_date and task.due_date < date.today())
         latest_run = max((run.created_at for run in client.conciliation_runs), default=None)
         row = _serialize_client(client, task_count=len(open_tasks), overdue_count=overdue_count, last_run_at=latest_run)
-        haystack = " ".join([row["trade_name"], row["legal_name"], row["document"], row["segment"], row["responsible_name"]]).lower()
+        haystack = " ".join(
+            [
+                row["trade_name"],
+                row["legal_name"],
+                row["document"],
+                row["segment"],
+                row["responsible_name"],
+                str(row["contracted_plan"]),
+                str(row["team_label"]),
+            ]
+        ).lower()
         if normalized_search and normalized_search not in haystack:
             continue
         rows.append(row)
@@ -332,7 +508,7 @@ def load_clients_overview(db: Session, *, filters: dict[str, object] | None = No
         "client_metrics": [
             {"label": "Carteira", "value": len(rows)},
             {"label": "Com atraso", "value": sum(1 for row in rows if row["overdue_count"])},
-            {"label": "Sem responsavel", "value": sum(1 for row in rows if row["responsible_name"] == "Sem responsavel")},
+            {"label": "Sem responsável", "value": sum(1 for row in rows if row["responsible_name"] == "Sem responsável")},
             {"label": "Sem contato", "value": sum(1 for row in rows if not row["primary_contact"])},
         ],
         "client_rows": rows,
@@ -350,8 +526,14 @@ def load_client_detail(db: Session, client_id: int) -> dict[str, object] | None:
         .where(BPOClient.id == client_id)
         .options(
             selectinload(BPOClient.contacts),
+            selectinload(BPOClient.projects).selectinload(BPOProject.responsible_user),
+            selectinload(BPOClient.projects).selectinload(BPOProject.tasks),
+            selectinload(BPOClient.demands).selectinload(BPODemand.project),
+            selectinload(BPOClient.demands).selectinload(BPODemand.responsible_user),
             selectinload(BPOClient.responsible_user),
             selectinload(BPOClient.tasks).selectinload(BPOTask.assigned_user),
+            selectinload(BPOClient.tasks).selectinload(BPOTask.project),
+            selectinload(BPOClient.tasks).selectinload(BPOTask.time_entries),
             selectinload(BPOClient.tasks).selectinload(BPOTask.events).selectinload(BPOTaskEvent.user),
             selectinload(BPOClient.conciliation_runs).selectinload(BPOConciliationRun.items),
         )
@@ -361,16 +543,32 @@ def load_client_detail(db: Session, client_id: int) -> dict[str, object] | None:
 
     tasks = sorted(client.tasks, key=lambda item: (item.completed_at is not None, item.due_date or date.max, item.created_at))
     runs = sorted(client.conciliation_runs, key=lambda item: item.created_at, reverse=True)
+    total_seconds = sum(entry.duration_seconds for task in client.tasks for entry in task.time_entries if entry.ended_at)
+    open_tasks = [_serialize_task(task) for task in tasks if _task_status(task) != "concluida"]
+    recent_demands = [_serialize_demand(item) for item in sorted(client.demands, key=lambda demand: demand.created_at, reverse=True)[:20]]
 
     return {
         "client": _serialize_client(
             client,
-            task_count=sum(1 for task in tasks if task.status != "concluida"),
-            overdue_count=sum(1 for task in tasks if task.due_date and task.due_date < date.today() and task.status != "concluida"),
+            task_count=sum(1 for task in tasks if _task_status(task) != "concluida"),
+            overdue_count=sum(1 for task in tasks if task.due_date and task.due_date < date.today() and _task_status(task) != "concluida"),
             last_run_at=runs[0].created_at if runs else None,
         ),
+        "client_metrics": [
+            {"label": "Projetos ativos", "value": sum(1 for item in client.projects if item.status == "ativo")},
+            {"label": "Tarefas abertas", "value": len(open_tasks)},
+            {"label": "Demandas abertas", "value": sum(1 for item in client.demands if item.status in {"aberta", "triagem"})},
+            {"label": "Horas gastas", "value": _duration_label(total_seconds)},
+        ],
         "contacts": client.contacts,
+        "projects": [_serialize_project(project) for project in sorted(client.projects, key=lambda item: item.created_at, reverse=True)],
         "tasks": [_serialize_task(task) for task in tasks[:20]],
+        "demands": recent_demands,
+        "time_entries": [
+            _serialize_time_entry(entry)
+            for task in tasks[:20]
+            for entry in sorted(task.time_entries, key=lambda item: item.started_at, reverse=True)
+        ][:20],
         "task_events": [
             {
                 "task_id": event.task_id,
@@ -385,7 +583,7 @@ def load_client_detail(db: Session, client_id: int) -> dict[str, object] | None:
         "conciliation_runs": [
             {
                 "id": run.id,
-                "period": f"{run.period_start.strftime('%d/%m/%Y')} ate {run.period_end.strftime('%d/%m/%Y')}",
+                "period": f"{run.period_start.strftime('%d/%m/%Y')} até {run.period_end.strftime('%d/%m/%Y')}",
                 "status": run.status,
                 "status_class": "success" if run.status == "concluida" else "warning",
                 "divergences": run.total_divergencias,
@@ -457,10 +655,452 @@ def load_pending_items(db: Session, *, filters: dict[str, object] | None = None)
     }
 
 
+def load_task_manager_overview(db: Session) -> dict[str, object]:
+    month_start = date.today().replace(day=1)
+    clients = db.scalars(
+        select(BPOClient)
+        .options(
+            selectinload(BPOClient.tasks).selectinload(BPOTask.assigned_user),
+            selectinload(BPOClient.demands),
+            selectinload(BPOClient.projects),
+        )
+        .order_by(BPOClient.trade_name.asc(), BPOClient.legal_name.asc())
+    ).all()
+    projects = db.scalars(
+        select(BPOProject).options(selectinload(BPOProject.client), selectinload(BPOProject.responsible_user), selectinload(BPOProject.tasks))
+    ).all()
+    tasks = db.scalars(
+        select(BPOTask)
+        .options(selectinload(BPOTask.client), selectinload(BPOTask.project), selectinload(BPOTask.assigned_user), selectinload(BPOTask.events))
+        .order_by(BPOTask.created_at.desc())
+    ).all()
+    demands = db.scalars(
+        select(BPODemand)
+        .options(selectinload(BPODemand.client), selectinload(BPODemand.project), selectinload(BPODemand.responsible_user))
+        .order_by(BPODemand.created_at.desc())
+    ).all()
+    time_entries = db.scalars(
+        select(BPOTaskTimeEntry)
+        .options(selectinload(BPOTaskTimeEntry.user), selectinload(BPOTaskTimeEntry.task).selectinload(BPOTask.client))
+        .order_by(BPOTaskTimeEntry.started_at.desc())
+    ).all()
+
+    active_clients = [client for client in clients if client.status != "inativo"]
+    active_projects = [project for project in projects if project.status == "ativo"]
+    open_tasks = [task for task in tasks if _task_status(task) != "concluida"]
+    open_demands = [item for item in demands if item.status in {"aberta", "triagem"}]
+    hours_month = sum(entry.duration_seconds for entry in time_entries if entry.started_at.date() >= month_start and entry.ended_at)
+    overdue_tasks = [task for task in open_tasks if _task_status(task) == "atrasada"]
+    sla_critical = [task for task in open_tasks if task.due_date and task.due_date <= (date.today() + timedelta(days=1))]
+
+    status_totals: dict[str, int] = defaultdict(int)
+    collaborator_totals: dict[str, int] = defaultdict(int)
+    client_totals: list[dict[str, object]] = []
+    for task in tasks:
+        status_totals[_task_status(task)] += 1
+    for entry in time_entries:
+        if entry.started_at.date() >= month_start:
+            collaborator_totals[entry.user.name if entry.user else "Sem responsável"] += entry.duration_seconds
+    for client in active_clients[:8]:
+        client_tasks = [task for task in client.tasks if task.created_at.date() >= month_start]
+        client_demands = [item for item in client.demands if item.created_at.date() >= month_start]
+        client_seconds = sum(
+            entry.duration_seconds
+            for task in client.tasks
+            for entry in task.time_entries
+            if entry.started_at.date() >= month_start and entry.ended_at
+        )
+        client_totals.append(
+            {
+                "client_name": client.trade_name or client.legal_name,
+                "hours_label": _duration_label(client_seconds),
+                "task_count": len(client_tasks),
+                "demand_count": len(client_demands),
+            }
+        )
+
+    upcoming_tasks = []
+    for task in sorted(open_tasks, key=lambda item: item.due_date or date.max)[:6]:
+        due_date = task.due_date
+        if due_date and due_date < date.today():
+            sla_tone = "error"
+            sla_label = "Atrasada"
+        elif due_date == date.today():
+            sla_tone = "warning"
+            sla_label = "Hoje"
+        else:
+            sla_tone = "success"
+            sla_label = "Em dia"
+        upcoming_tasks.append(
+            {
+                "id": task.id,
+                "title": task.title,
+                "client_name": task.client.trade_name or task.client.legal_name,
+                "due_date": due_date.strftime("%d/%m/%Y") if due_date else "-",
+                "sla_label": sla_label,
+                "sla_tone": sla_tone,
+                "href": f"/operacoes/gestor-tarefas/tarefasstatus={'atrasada' if sla_tone == 'error' else ''}",
+            }
+        )
+
+    critical_tasks = [
+        _serialize_task(task)
+        for task in sorted(
+            open_tasks,
+            key=lambda item: (
+                _task_status(item) != "atrasada",
+                item.priority != "alta",
+                item.due_date or date.max,
+            ),
+        )[:6]
+    ]
+
+    recent_activities = []
+    for task in tasks[:10]:
+        for event in sorted(task.events, key=lambda item: item.created_at, reverse=True)[:1]:
+            recent_activities.append(
+                {
+                    "type": "Tarefa",
+                    "description": task.title,
+                    "reference": f"Cliente: {task.client.trade_name or task.client.legal_name}",
+                    "responsible": task.assigned_user.name if task.assigned_user else "Sem responsável",
+                    "event_at": event.created_at.strftime("%d/%m/%Y %H:%M"),
+                    "event_at_raw": event.created_at,
+                }
+            )
+    for demand in demands[:6]:
+        recent_activities.append(
+            {
+                "type": "Demanda",
+                "description": demand.title,
+                "reference": f"Cliente: {demand.client.trade_name or demand.client.legal_name}",
+                "responsible": demand.responsible_user.name if demand.responsible_user else "Sem responsável",
+                "event_at": demand.created_at.strftime("%d/%m/%Y %H:%M"),
+                "event_at_raw": demand.created_at,
+            }
+        )
+    recent_activities.sort(key=lambda item: item["event_at_raw"], reverse=True)
+
+    return {
+        "manager_metrics": [
+            {"label": "Tarefas atrasadas", "value": len(overdue_tasks), "delta": "Acao imediata", "href": "/operacoes/gestor-tarefas/tarefasstatus=atrasada"},
+            {"label": "Demandas abertas", "value": len(open_demands), "delta": "Entrada e triagem", "href": "/operacoes/gestor-tarefas/demandasstatus=aberta"},
+            {"label": "Projetos ativos", "value": len(active_projects), "delta": "Frentes em execução", "href": "/operacoes/gestor-tarefas/projetos?status=ativo"},
+            {"label": "Horas do mês", "value": _duration_label(hours_month), "delta": "Carga operacional", "href": "/operacoes/gestor-tarefas/tempo"},
+            {"label": "SLA crítico", "value": len(sla_critical), "delta": "Hoje e atrasadas", "href": "/operacoes/gestor-tarefas/alertas"},
+        ],
+        "status_rows": [
+            {"label": TASK_STATUS_LABELS.get(key, key.title()), "value": value}
+            for key, value in sorted(status_totals.items(), key=lambda item: item[1], reverse=True)
+        ],
+        "collaborator_rows": [
+            {"label": label, "value": _duration_label(seconds), "seconds": seconds}
+            for label, seconds in sorted(collaborator_totals.items(), key=lambda item: item[1], reverse=True)[:6]
+        ],
+        "upcoming_tasks": upcoming_tasks,
+        "critical_tasks": critical_tasks,
+        "recent_demands": [_serialize_demand(item) for item in open_demands[:5]],
+        "recent_activities": recent_activities[:8],
+        "client_summary": sorted(client_totals, key=lambda item: item["task_count"], reverse=True)[:6],
+    }
+
+
+def load_task_manager_clients(db: Session, *, filters: dict[str, object] | None = None) -> dict[str, object]:
+    return load_clients_overview(db, filters=filters)
+
+
+def load_projects_overview(db: Session, *, filters: dict[str, object] | None = None) -> dict[str, object]:
+    filters = filters or {}
+    client_id = filters.get("client_id")
+    status = str(filters.get("status") or "").strip()
+    responsible_user_id = filters.get("responsible_user_id")
+
+    query = select(BPOProject).options(
+        selectinload(BPOProject.client),
+        selectinload(BPOProject.responsible_user),
+        selectinload(BPOProject.tasks),
+        selectinload(BPOProject.demands),
+    )
+    if client_id:
+        query = query.where(BPOProject.client_id == client_id)
+    if status:
+        query = query.where(BPOProject.status == status)
+    if responsible_user_id:
+        query = query.where(BPOProject.responsible_user_id == responsible_user_id)
+    projects = db.scalars(query.order_by(BPOProject.created_at.desc())).all()
+    rows = [_serialize_project(item) for item in projects]
+    return {
+        "project_metrics": [
+            {"label": "Projetos", "value": len(rows)},
+            {"label": "Ativos", "value": sum(1 for item in rows if item["status"] == "ativo")},
+            {"label": "Pausados", "value": sum(1 for item in rows if item["status"] == "pausado")},
+            {"label": "Concluídos", "value": sum(1 for item in rows if item["status"] == "concluido")},
+        ],
+        "project_rows": rows,
+        "project_filters": {
+            "client_id": client_id,
+            "status": status,
+            "responsible_user_id": responsible_user_id,
+        },
+    }
+
+
+def load_tasks_overview(db: Session, *, filters: dict[str, object] | None = None) -> dict[str, object]:
+    filters = filters or {}
+    client_id = filters.get("client_id")
+    project_id = filters.get("project_id")
+    status = str(filters.get("status") or "").strip()
+    assigned_user_id = filters.get("assigned_user_id")
+    query = select(BPOTask).options(
+        selectinload(BPOTask.client),
+        selectinload(BPOTask.project),
+        selectinload(BPOTask.assigned_user),
+        selectinload(BPOTask.time_entries),
+    )
+    if client_id:
+        query = query.where(BPOTask.client_id == client_id)
+    if project_id:
+        query = query.where(BPOTask.project_id == project_id)
+    if status:
+        if status == "atrasada":
+            query = query.where(BPOTask.status != "concluida", BPOTask.due_date < date.today())
+        else:
+            query = query.where(BPOTask.status == status)
+    if assigned_user_id:
+        query = query.where(BPOTask.assigned_user_id == assigned_user_id)
+    tasks = db.scalars(query.order_by(BPOTask.due_date.asc().nulls_last(), BPOTask.created_at.desc())).all()
+    rows = [_serialize_task(task) for task in tasks]
+    board_map = {
+        "a_fazer": {"id": "a_fazer", "label": "A fazer", "items": []},
+        "em_andamento": {"id": "em_andamento", "label": "Em andamento", "items": []},
+        "em_revisao": {"id": "em_revisao", "label": "Em revisão", "items": []},
+        "concluidas": {"id": "concluidas", "label": "Concluído", "items": []},
+    }
+    for item in rows:
+        board_map[item["board_column"]]["items"].append(item)
+    return {
+        "task_metrics": [
+            {"label": "Tarefas", "value": len(rows)},
+            {"label": "Em execução", "value": sum(1 for item in rows if item["status"] == "em_execucao")},
+            {"label": "Em revisão", "value": sum(1 for item in rows if item["status"] == "aguardando_cliente")},
+            {"label": "Atrasadas", "value": sum(1 for item in rows if item["status"] == "atrasada")},
+        ],
+        "task_rows": rows,
+        "task_columns": list(board_map.values()),
+        "task_filters": {
+            "client_id": client_id,
+            "project_id": project_id,
+            "status": status,
+            "assigned_user_id": assigned_user_id,
+        },
+    }
+
+
+def load_demands_overview(db: Session, *, filters: dict[str, object] | None = None) -> dict[str, object]:
+    filters = filters or {}
+    client_id = filters.get("client_id")
+    status = str(filters.get("status") or "").strip()
+    demand_type = str(filters.get("demand_type") or "").strip()
+    query = select(BPODemand).options(
+        selectinload(BPODemand.client),
+        selectinload(BPODemand.project),
+        selectinload(BPODemand.responsible_user),
+    )
+    if client_id:
+        query = query.where(BPODemand.client_id == client_id)
+    if status:
+        query = query.where(BPODemand.status == status)
+    if demand_type:
+        query = query.where(BPODemand.demand_type == demand_type)
+    demands = db.scalars(query.order_by(BPODemand.created_at.desc())).all()
+    rows = [_serialize_demand(item) for item in demands]
+    pipeline_map = {
+        "aberta": {"id": "aberta", "label": "Entrada", "items": []},
+        "triagem": {"id": "triagem", "label": "Triagem", "items": []},
+        "convertida": {"id": "convertida", "label": "Convertida", "items": []},
+        "concluida": {"id": "concluida", "label": "Concluida", "items": []},
+    }
+    for item in rows:
+        pipeline_map[item["pipeline_column"]]["items"].append(item)
+    return {
+        "demand_metrics": [
+            {"label": "Demandas", "value": len(rows)},
+            {"label": "Abertas", "value": sum(1 for item in rows if item["status"] == "aberta")},
+            {"label": "Em triagem", "value": sum(1 for item in rows if item["status"] == "triagem")},
+            {"label": "Convertidas", "value": sum(1 for item in rows if item["status"] == "convertida")},
+        ],
+        "demand_rows": rows,
+        "demand_columns": list(pipeline_map.values()),
+        "demand_filters": {
+            "client_id": client_id,
+            "status": status,
+            "demand_type": demand_type,
+        },
+    }
+
+
+def load_time_overview(db: Session) -> dict[str, object]:
+    entries = db.scalars(
+        select(BPOTaskTimeEntry)
+        .options(selectinload(BPOTaskTimeEntry.user), selectinload(BPOTaskTimeEntry.task).selectinload(BPOTask.client))
+        .order_by(BPOTaskTimeEntry.started_at.desc())
+    ).all()
+    active_entries = [_serialize_time_entry(item) for item in entries if item.ended_at is None]
+    recent_entries = [_serialize_time_entry(item) for item in entries[:20]]
+    per_user: dict[str, int] = defaultdict(int)
+    for item in entries:
+        if item.ended_at:
+            per_user[item.user.name if item.user else "Sem responsável"] += item.duration_seconds
+    return {
+        "time_metrics": [
+            {"label": "Apontamentos", "value": len(entries)},
+            {"label": "Em andamento", "value": len(active_entries)},
+            {"label": "Horas totais", "value": _duration_label(sum(item.duration_seconds for item in entries if item.ended_at))},
+            {"label": "Colaboradores", "value": len(per_user)},
+        ],
+        "active_time_entries": active_entries,
+        "recent_time_entries": recent_entries,
+        "time_by_user": [{"label": label, "value": _duration_label(seconds)} for label, seconds in sorted(per_user.items(), key=lambda item: item[1], reverse=True)],
+    }
+
+
+def load_current_time_widget(db: Session, user_id: int | None) -> dict[str, object]:
+    if not user_id:
+        return {"current_time_entry": None}
+    entry = db.scalar(
+        select(BPOTaskTimeEntry)
+        .where(BPOTaskTimeEntry.user_id == user_id, BPOTaskTimeEntry.ended_at.is_(None))
+        .options(selectinload(BPOTaskTimeEntry.task).selectinload(BPOTask.client))
+        .order_by(BPOTaskTimeEntry.started_at.desc())
+    )
+    if not entry:
+        return {"current_time_entry": None}
+    return {"current_time_entry": _serialize_time_entry(entry)}
+
+
+def load_routines_overview(db: Session) -> dict[str, object]:
+    routines = db.scalars(
+        select(BPORecurringRoutine)
+        .options(selectinload(BPORecurringRoutine.client), selectinload(BPORecurringRoutine.task_template), selectinload(BPORecurringRoutine.default_assignee))
+        .order_by(BPORecurringRoutine.updated_at.desc())
+    ).all()
+    rows = []
+    for item in routines:
+        rows.append(
+            {
+                "id": item.id,
+                "client_name": item.client.trade_name or item.client.legal_name,
+                "template_name": item.task_template.name if item.task_template else "Sem template",
+                "frequency": item.frequency,
+                "day_of_month": item.day_of_month or "-",
+                "assignee_name": item.default_assignee.name if item.default_assignee else "Sem responsável",
+                "status_label": "Ativa" if item.is_active else "Pausada",
+            }
+        )
+    return {
+        "routine_metrics": [
+            {"label": "Rotinas", "value": len(rows)},
+            {"label": "Ativas", "value": sum(1 for item in routines if item.is_active)},
+            {"label": "Mensais", "value": sum(1 for item in routines if item.frequency == "monthly")},
+            {"label": "Sem responsável", "value": sum(1 for item in routines if item.default_assignee is None)},
+        ],
+        "routine_rows": rows,
+    }
+
+
+def load_alerts_overview(db: Session) -> dict[str, object]:
+    tasks = db.scalars(select(BPOTask).options(selectinload(BPOTask.client), selectinload(BPOTask.assigned_user))).all()
+    alerts = []
+    for task in tasks:
+        if task.status != "concluida" and task.due_date and task.due_date < date.today():
+            alerts.append(
+                {
+                    "type": "Tarefa atrasada",
+                    "title": task.title,
+                    "client_name": task.client.trade_name or task.client.legal_name,
+                    "detail": f"Vencimento em {task.due_date.strftime('%d/%m/%Y')}",
+                    "tone": "error",
+                }
+            )
+    clients = db.scalars(select(BPOClient).options(selectinload(BPOClient.tasks))).all()
+    for client in clients:
+        if client.sla_deadline_day and any(task.status != "concluida" and task.due_date and task.due_date.day > client.sla_deadline_day for task in client.tasks):
+            alerts.append(
+                {
+                    "type": "Cliente fora do SLA",
+                    "title": client.trade_name or client.legal_name,
+                    "client_name": client.trade_name or client.legal_name,
+                    "detail": f"SLA configurado para dia {client.sla_deadline_day}",
+                    "tone": "warning",
+                }
+            )
+    user_task_load: dict[str, int] = defaultdict(int)
+    for task in tasks:
+        if task.status != "concluida" and task.assigned_user:
+            user_task_load[task.assigned_user.name] += 1
+    for user_name, total in user_task_load.items():
+        if total >= 8:
+            alerts.append(
+                {
+                    "type": "Sobrecarga",
+                    "title": user_name,
+                    "client_name": "Equipe",
+                    "detail": f"{total} tarefas abertas sob responsabilidade.",
+                    "tone": "warning",
+                }
+            )
+    return {
+        "alert_metrics": [
+            {"label": "Alertas", "value": len(alerts)},
+            {"label": "Críticos", "value": sum(1 for item in alerts if item["tone"] == "error")},
+            {"label": "Atenção", "value": sum(1 for item in alerts if item["tone"] == "warning")},
+            {"label": "Sobrecarga", "value": sum(1 for item in alerts if item["type"] == "Sobrecarga")},
+        ],
+        "alert_rows": alerts[:20],
+    }
+
+
+def load_performance_overview(db: Session) -> dict[str, object]:
+    month_start = date.today().replace(day=1)
+    entries = db.scalars(
+        select(BPOTaskTimeEntry)
+        .options(selectinload(BPOTaskTimeEntry.user), selectinload(BPOTaskTimeEntry.task).selectinload(BPOTask.client))
+    ).all()
+    tasks = db.scalars(select(BPOTask).options(selectinload(BPOTask.client), selectinload(BPOTask.assigned_user))).all()
+    by_user: dict[str, dict[str, int]] = defaultdict(lambda: {"seconds": 0, "done": 0, "late": 0})
+    by_client: dict[str, dict[str, int]] = defaultdict(lambda: {"seconds": 0, "tasks": 0, "sla": 0})
+    for entry in entries:
+        if entry.ended_at and entry.started_at.date() >= month_start:
+            by_user[entry.user.name if entry.user else "Sem responsável"]["seconds"] += entry.duration_seconds
+            by_client[entry.task.client.trade_name or entry.task.client.legal_name]["seconds"] += entry.duration_seconds
+    for task in tasks:
+        if task.created_at.date() >= month_start:
+            assignee = task.assigned_user.name if task.assigned_user else "Sem responsável"
+            client_name = task.client.trade_name or task.client.legal_name
+            by_client[client_name]["tasks"] += 1
+            if task.status == "concluida":
+                by_user[assignee]["done"] += 1
+            if task.due_date and task.due_date < date.today() and task.status != "concluida":
+                by_user[assignee]["late"] += 1
+            if task.client.sla_deadline_day and task.due_date and task.due_date.day <= task.client.sla_deadline_day:
+                by_client[client_name]["sla"] += 1
+    return {
+        "performance_user_rows": [
+            {"label": label, "hours": _duration_label(item["seconds"]), "done": item["done"], "late": item["late"]}
+            for label, item in sorted(by_user.items(), key=lambda pair: pair[1]["seconds"], reverse=True)
+        ],
+        "performance_client_rows": [
+            {"label": label, "hours": _duration_label(item["seconds"]), "tasks": item["tasks"], "sla_hits": item["sla"]}
+            for label, item in sorted(by_client.items(), key=lambda pair: pair[1]["seconds"], reverse=True)
+        ],
+    }
+
+
 def create_task(
     db: Session,
     *,
     client_id: int,
+    project_id: int | None,
     title: str,
     description: str,
     created_by_user_id: int | None,
@@ -472,6 +1112,7 @@ def create_task(
 ) -> BPOTask:
     task = BPOTask(
         client_id=client_id,
+        project_id=project_id,
         task_template_id=task_template_id,
         title=title.strip(),
         description=description.strip(),
@@ -560,6 +1201,9 @@ def create_client(
     trade_name: str,
     document: str,
     segment: str,
+    contracted_plan: str,
+    sla_deadline_day: int | None,
+    team_label: str,
     responsible_user_id: int | None,
     notes: str,
 ) -> BPOClient:
@@ -568,6 +1212,9 @@ def create_client(
         trade_name=trade_name.strip(),
         document=document.strip(),
         segment=segment.strip(),
+        contracted_plan=contracted_plan.strip(),
+        sla_deadline_day=sla_deadline_day if sla_deadline_day and sla_deadline_day > 0 else None,
+        team_label=team_label.strip(),
         responsible_user_id=responsible_user_id,
         notes=notes.strip(),
         status="ativo",
@@ -585,6 +1232,9 @@ def update_client(
     trade_name: str,
     document: str,
     segment: str,
+    contracted_plan: str,
+    sla_deadline_day: int | None,
+    team_label: str,
     responsible_user_id: int | None,
     notes: str,
     status: str,
@@ -596,6 +1246,9 @@ def update_client(
     client.trade_name = (trade_name or legal_name).strip()
     client.document = document.strip()
     client.segment = segment.strip()
+    client.contracted_plan = contracted_plan.strip()
+    client.sla_deadline_day = sla_deadline_day if sla_deadline_day and sla_deadline_day > 0 else None
+    client.team_label = team_label.strip()
     client.responsible_user_id = responsible_user_id
     client.notes = notes.strip()
     client.status = status if status in CLIENT_STATUS_LABELS else "ativo"
@@ -612,6 +1265,147 @@ def archive_client(db: Session, *, client_id: int) -> BPOClient | None:
     return client
 
 
+def create_project(
+    db: Session,
+    *,
+    client_id: int,
+    name: str,
+    project_type: str,
+    status: str,
+    description: str,
+    start_date: date | None,
+    end_date: date | None,
+    responsible_user_id: int | None,
+) -> BPOProject:
+    project = BPOProject(
+        client_id=client_id,
+        name=name.strip(),
+        project_type=project_type if project_type in PROJECT_TYPE_LABELS else "rotina_mensal",
+        status=status if status in PROJECT_STATUS_LABELS else "ativo",
+        description=description.strip(),
+        start_date=start_date,
+        end_date=end_date,
+        responsible_user_id=responsible_user_id,
+    )
+    db.add(project)
+    db.commit()
+    return project
+
+
+def create_demand(
+    db: Session,
+    *,
+    client_id: int,
+    project_id: int | None,
+    title: str,
+    description: str,
+    source: str,
+    demand_type: str,
+    priority: str,
+    status: str,
+    due_date: date | None,
+    responsible_user_id: int | None,
+    created_by_user_id: int | None,
+) -> BPODemand:
+    demand = BPODemand(
+        client_id=client_id,
+        project_id=project_id,
+        title=title.strip(),
+        description=description.strip(),
+        source=source if source in DEMAND_SOURCE_LABELS else "manual",
+        demand_type=demand_type if demand_type in DEMAND_TYPE_LABELS else "operacional",
+        priority=priority if priority in PRIORITY_LABELS else "normal",
+        status=status if status in DEMAND_STATUS_LABELS else "aberta",
+        due_date=due_date,
+        responsible_user_id=responsible_user_id,
+        created_by_user_id=created_by_user_id,
+    )
+    db.add(demand)
+    db.commit()
+    return demand
+
+
+def convert_demand_to_task(
+    db: Session,
+    *,
+    demand_id: int,
+    user_id: int | None,
+) -> tuple[BPODemand | None, BPOTask | None]:
+    demand = db.scalar(
+        select(BPODemand)
+        .where(BPODemand.id == demand_id)
+        .options(selectinload(BPODemand.client), selectinload(BPODemand.project))
+    )
+    if not demand:
+        return None, None
+    if demand.converted_task_id:
+        task = db.get(BPOTask, demand.converted_task_id)
+        return demand, task
+    task = create_task(
+        db,
+        client_id=demand.client_id,
+        project_id=demand.project_id,
+        title=demand.title,
+        description=demand.description or "Tarefa criada a partir de demanda.",
+        created_by_user_id=user_id,
+        assigned_user_id=demand.responsible_user_id,
+        due_date=demand.due_date,
+        priority=demand.priority,
+    )
+    demand = db.get(BPODemand, demand_id)
+    demand.converted_task_id = task.id
+    demand.status = "convertida"
+    db.commit()
+    return demand, task
+
+
+def start_task_time_entry(
+    db: Session,
+    *,
+    task_id: int,
+    user_id: int | None,
+) -> BPOTaskTimeEntry | None:
+    task = db.get(BPOTask, task_id)
+    if not task:
+        return None
+    existing = db.scalar(
+        select(BPOTaskTimeEntry).where(
+            BPOTaskTimeEntry.task_id == task_id,
+            BPOTaskTimeEntry.user_id == user_id,
+            BPOTaskTimeEntry.ended_at.is_(None),
+        )
+    )
+    if existing:
+        return existing
+    entry = BPOTaskTimeEntry(task_id=task_id, user_id=user_id, started_at=utcnow(), note="Apontamento iniciado.")
+    db.add(entry)
+    if task.status == "pendente":
+        task.status = "em_execucao"
+        task.started_at = task.started_at or utcnow()
+    db.commit()
+    return entry
+
+
+def stop_task_time_entry(db: Session, *, entry_id: int) -> BPOTaskTimeEntry | None:
+    entry = db.scalar(
+        select(BPOTaskTimeEntry)
+        .where(BPOTaskTimeEntry.id == entry_id)
+        .options(selectinload(BPOTaskTimeEntry.task))
+    )
+    if not entry:
+        return None
+    if entry.ended_at is None:
+        now = utcnow()
+        if entry.started_at.tzinfo is None and now.tzinfo is not None:
+            now = now.replace(tzinfo=None)
+        elif entry.started_at.tzinfo is not None and now.tzinfo is None:
+            now = now.replace(tzinfo=entry.started_at.tzinfo)
+        entry.ended_at = now
+        entry.duration_seconds = max(int((entry.ended_at - entry.started_at).total_seconds()), 0)
+    db.commit()
+    return entry
+
+
 def create_default_task_for_conciliation(
     db: Session,
     *,
@@ -623,12 +1417,13 @@ def create_default_task_for_conciliation(
 ) -> BPOTask:
     template = db.scalar(select(BPOTaskTemplate).where(BPOTaskTemplate.service_type == "conciliacao"))
     due_date = due_date or (competence_date + timedelta(days=2))
-    title = f"Conciliacao {competence_date.strftime('%m/%Y')}"
+    title = f"Conciliação {competence_date.strftime('%m/%Y')}"
     return create_task(
         db,
         client_id=client_id,
+        project_id=None,
         title=title,
-        description="Tarefa gerada automaticamente a partir de uma conciliacao sem tarefa previa.",
+        description="Tarefa gerada automaticamente a partir de uma conciliação sem tarefa prévia.",
         created_by_user_id=created_by_user_id,
         assigned_user_id=assigned_user_id,
         task_template_id=template.id if template else None,
@@ -652,6 +1447,7 @@ def update_task(
     db: Session,
     *,
     task_id: int,
+    project_id: int | None,
     title: str,
     description: str,
     assigned_user_id: int | None,
@@ -664,6 +1460,7 @@ def update_task(
         return None
     task.title = title.strip()
     task.description = description.strip()
+    task.project_id = project_id
     task.assigned_user_id = assigned_user_id
     task.competence_date = competence_date
     task.due_date = due_date
@@ -772,7 +1569,7 @@ def persist_conciliation_run(
                 gross_amount=_optional_decimal(gross_amount),
                 net_amount=_optional_decimal(net_amount),
                 status="aberto",
-                detail=str(row.get("Motivo") or "Divergencia registrada na conciliacao."),
+                detail=str(row.get("Motivo") or "Divergência registrada na conciliação."),
             )
         )
 
@@ -782,7 +1579,7 @@ def persist_conciliation_run(
             task_id=task_id,
             status_value="concluida",
             user_id=user_id,
-            note=f"Conciliacao concluida para o periodo {period_start.strftime('%m/%Y')}.",
+            note=f"Conciliação concluída para o período {period_start.strftime('%m/%Y')}.",
         )
         run = db.get(BPOConciliationRun, run.id)
 

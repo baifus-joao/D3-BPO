@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_task_manager_nav.html" %}
+
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Dashboard do cliente</p>
+            <h2>{{ client.trade_name }}</h2>
+            <p class="page-subtitle">{{ client.contracted_plan }} · {{ client.sla_label }} · {{ client.team_label }}</p>
+        </div>
+        <div class="actions">
+            <a href="/operacoes/conciliacao?client_id={{ client.id }}" class="button-link" data-loading-link="true">Conciliar cliente</a>
+            <a href="/operacoes/gestor-tarefas/clientes" class="ghost-button button-link" data-loading-link="true">Voltar</a>
+        </div>
+    </div>
+    <section class="grid four-col compact-grid">
+        {% for item in client_metrics %}
+        <article class="metric-card">
+            <span class="metric-label">{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+        </article>
+        {% endfor %}
+    </section>
+</section>
+
+<section class="ops-dashboard-grid">
+    <article class="card">
+        <div class="card-header"><div><p class="section-kicker">Projetos</p><h2>Projetos do cliente</h2></div></div>
+        <div class="list-stack">
+            {% for item in projects %}
+            <article class="ops-activity-item">
+                <div>
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ item.project_type_label }} · {{ item.responsible_name }}</span>
+                </div>
+                <span class="status-badge status-neutral">{{ item.status_label }}</span>
+            </article>
+            {% else %}
+            <div class="empty-panel empty-panel-compact">
+                <strong>Você ainda não tem projetos.</strong>
+                <span>Crie o primeiro para começar a organizar esse cliente.</span>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header"><div><p class="section-kicker">Demandas</p><h2>Demandas recentes</h2></div></div>
+        <div class="list-stack">
+            {% for item in demands[:6] %}
+            <article class="ops-activity-item">
+                <div>
+                    <strong>{{ item.title }}</strong>
+                    <span>{{ item.project_name }} · {{ item.source_label }}</span>
+                </div>
+                <span class="status-badge status-neutral">{{ item.status_label }}</span>
+            </article>
+            {% else %}
+            <div class="empty-panel empty-panel-compact">
+                <strong>Nenhuma demanda aberta.</strong>
+                <span>As solicitações desse cliente vão aparecer aqui.</span>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="ops-dashboard-grid">
+    <article class="card">
+        <div class="card-header"><div><p class="section-kicker">Tarefas</p><h2>Tarefas do cliente</h2></div></div>
+        <div class="table-shell">
+            {% for item in tasks %}
+            <div class="table-row table-row-rich ops-table-row">
+                <span><strong>{{ item.title }}</strong></span>
+                <span>{{ item.project_name }}</span>
+                <span>{{ item.assignee_name }}</span>
+                <span>{{ item.due_date }}</span>
+                <span>{{ item.logged_time_label }}</span>
+                <span class="status-badge status-{{ item.status_class }}">{{ item.status_label }}</span>
+            </div>
+            {% else %}
+            <div class="empty-panel">
+                <strong>Nenhuma tarefa registrada.</strong>
+                <span>Crie tarefas para transformar o atendimento em execução acompanhável.</span>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header"><div><p class="section-kicker">Tempo</p><h2>Horas recentes</h2></div></div>
+        <div class="list-stack">
+            {% for item in time_entries[:8] %}
+            <article class="ops-activity-item">
+                <div>
+                    <strong>{{ item.task_title }}</strong>
+                    <span>{{ item.user_name }} · {{ item.started_at }}</span>
+                </div>
+                <span>{{ item.duration_label }}</span>
+            </article>
+            {% else %}
+            <div class="empty-panel empty-panel-compact">
+                <strong>Sem horas apontadas ainda.</strong>
+                <span>Quando o time registrar tempo, a leitura aparecerá aqui.</span>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

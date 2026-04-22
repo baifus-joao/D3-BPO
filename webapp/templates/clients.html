@@ -9,7 +9,7 @@
             </div>
         </div>
         <form action="/operacoes/clientes" method="get" class="toolbar-grid" data-loading-form="true" data-loading-text="Filtrando carteira...">
-            <input name="search" placeholder="Buscar por nome, documento ou responsavel" value="{{ client_filters.search }}">
+            <input name="search" placeholder="Buscar por nome, documento ou responsável" value="{{ client_filters.search }}">
             <select name="status">
                 <option value="">Todos os status</option>
                 <option value="ativo" {% if client_filters.status == "ativo" %}selected{% endif %}>Ativo</option>
@@ -18,7 +18,7 @@
                 <option value="inativo" {% if client_filters.status == "inativo" %}selected{% endif %}>Inativo</option>
             </select>
             <select name="responsible_user_id">
-                <option value="">Todos os responsaveis</option>
+                <option value="">Todos os responsáveis</option>
                 {% for item in users %}<option value="{{ item.id }}" {% if client_filters.responsible_user_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
             </select>
             <button type="submit">Filtrar</button>
@@ -67,7 +67,7 @@
             <label class="field">
                 <span>Responsavel interno</span>
                 <select name="responsible_user_id">
-                    <option value="">Sem responsavel</option>
+                    <option value="">Sem responsável</option>
                     {% for item in users %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
                 </select>
             </label>

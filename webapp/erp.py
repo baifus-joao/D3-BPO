@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session, selectinload
 
+from .internal_finance_catalog import display_financial_category, seed_internal_finance_categories
 from .models import BankAccount, ExecutionLog, FinancialCategory, FinancialTransaction, PaymentMethod, Store, User
 
 
@@ -28,22 +29,22 @@ CONTEXTS = {
     "hub": {
         "id": "hub",
         "label": "D3 Hub",
-        "title": "Visao geral",
-        "subtitle": "Entrada unica para os contextos da D3.",
+        "title": "Visão geral",
+        "subtitle": "Entrada única para os contextos da D3.",
         "href": "/hub",
     },
     "gestao": {
         "id": "gestao",
-        "label": "D3 Gestao",
-        "title": "Gestao",
+        "label": "D3 Gestão",
+        "title": "Gestão",
         "subtitle": "Financeiro e controles internos.",
         "href": "/gestao/dashboard",
     },
     "operacoes": {
         "id": "operacoes",
-        "label": "D3 Operacoes",
-        "title": "Operacoes",
-        "subtitle": "Execucao dos servicos para clientes.",
+        "label": "D3 Operações",
+        "title": "Operações",
+        "subtitle": "Gestor de tarefas, conciliação e apoio operacional por cliente.",
         "href": "/operacoes/dashboard",
     },
 }
@@ -51,25 +52,25 @@ CONTEXTS = {
 NAV_ITEMS = {
     "hub": [
         {"id": "hub", "label": "Hub", "href": "/hub"},
-        {"id": "relatorios", "label": "Relatorios", "href": "/relatorios"},
-        {"id": "configuracoes", "label": "Configuracoes", "href": "/configuracoes"},
+        {"id": "relatorios", "label": "Relatórios", "href": "/relatorios"},
+        {"id": "configuracoes", "label": "Configurações", "href": "/configuracoes"},
     ],
     "gestao": [
         {"id": "dashboard", "label": "Dashboard", "href": "/gestao/dashboard"},
-        {"id": "fluxo_caixa", "label": "Fluxo de caixa", "href": "/gestao/fluxo-caixa"},
+        {"id": "contas", "label": "Contas", "href": "/gestao/contas"},
+        {"id": "fluxo_caixa", "label": "Fluxo de Caixa", "href": "/gestao/fluxo-caixa"},
+        {"id": "lancamentos", "label": "Lançamentos", "href": "/gestao/lancamentos"},
+        {"id": "projecoes", "label": "Projeções", "href": "/gestao/projecoes"},
         {"id": "cadastros", "label": "Cadastros", "href": "/gestao/cadastros"},
-        {"id": "relatorios", "label": "Relatorios", "href": "/gestao/relatorios"},
-        {"id": "configuracoes", "label": "Configuracoes", "href": "/configuracoes"},
+        {"id": "relatorios", "label": "Relatórios", "href": "/gestao/relatorios"},
+        {"id": "configuracoes", "label": "Configurações", "href": "/configuracoes"},
     ],
     "operacoes": [
         {"id": "dashboard", "label": "Dashboard", "href": "/operacoes/dashboard"},
-        {"id": "clientes", "label": "Clientes", "href": "/operacoes/clientes"},
-        {"id": "pendencias", "label": "Pendencias", "href": "/operacoes/pendencias"},
-        {"id": "financeiro", "label": "Financeiro", "href": "/operacoes/financeiro/configuracoes"},
-        {"id": "conciliacao", "label": "Conciliacao", "href": "/operacoes/conciliacao"},
+        {"id": "gestor_tarefas", "label": "Gestor de tarefas", "href": "/operacoes/gestor-tarefas"},
+        {"id": "conciliacao", "label": "Conciliação", "href": "/operacoes/conciliacao"},
         {"id": "dilmaria", "label": "DilmarIA", "href": "/operacoes/dilmaria"},
-        {"id": "relatorios", "label": "Relatorios", "href": "/operacoes/relatorios"},
-        {"id": "configuracoes", "label": "Configuracoes", "href": "/configuracoes"},
+        {"id": "configuracoes", "label": "Configurações", "href": "/configuracoes"},
     ],
 }
 
@@ -109,7 +110,7 @@ def build_contexts(current_area: str | None) -> list[dict[str, object]]:
 
 
 def seed_reference_data(db: Session) -> None:
-    return None
+    seed_internal_finance_categories(db)
 
 
 def seed_cashflow_data(db: Session) -> None:
@@ -152,10 +153,17 @@ def load_users(db: Session) -> list[dict[str, object]]:
 
 
 def load_reference_lists(db: Session) -> dict[str, list[object]]:
+    categories = db.scalars(
+        select(FinancialCategory)
+        .where(FinancialCategory.is_active.is_(True))
+        .order_by(FinancialCategory.type.asc(), FinancialCategory.name.asc())
+    ).all()
+    for item in categories:
+        item.display_name = display_financial_category(item.name)
     return {
         "stores": db.scalars(select(Store).where(Store.is_active.is_(True)).order_by(Store.name.asc())).all(),
         "accounts": db.scalars(select(BankAccount).where(BankAccount.is_active.is_(True)).order_by(BankAccount.name.asc())).all(),
-        "categories": db.scalars(select(FinancialCategory).where(FinancialCategory.is_active.is_(True)).order_by(FinancialCategory.name.asc())).all(),
+        "categories": categories,
         "payment_methods": db.scalars(select(PaymentMethod).where(PaymentMethod.is_active.is_(True)).order_by(PaymentMethod.name.asc())).all(),
     }
 
@@ -194,6 +202,7 @@ def load_management_reports(db: Session) -> dict[str, object]:
             FinancialCategory.name.label("category_name"),
             BankAccount.name.label("account_name"),
         )
+        .where(FinancialTransaction.source == "manual")
         .outerjoin(FinancialCategory, FinancialCategory.id == FinancialTransaction.category_id)
         .outerjoin(BankAccount, BankAccount.id == FinancialTransaction.bank_account_id)
         .order_by(FinancialTransaction.transaction_date.desc(), FinancialTransaction.id.desc())
@@ -233,7 +242,7 @@ def load_management_reports(db: Session) -> dict[str, object]:
     recent_rows = []
     for item in items:
         if item.type == "SAIDA":
-            label = item.category_name or "Sem categoria"
+            label = display_financial_category(item.category_name or "Sem categoria")
             category_totals[label] += Decimal(item.amount)
         account_label = item.account_name or "Sem conta"
         signed = Decimal(item.amount) if item.type == "ENTRADA" else -Decimal(item.amount)
@@ -244,7 +253,7 @@ def load_management_reports(db: Session) -> dict[str, object]:
             {
                 "date": item.transaction_date.strftime("%d/%m/%Y"),
                 "description": item.description,
-                "category": item.category_name or "-",
+                "category": display_financial_category(item.category_name or "-"),
                 "status": item.status,
                 "status_class": "success" if item.status == "realizado" else "warning",
                 "amount": Decimal(item.amount) if item.type == "ENTRADA" else -Decimal(item.amount),

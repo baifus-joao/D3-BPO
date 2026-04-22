@@ -4,7 +4,7 @@
     <div class="card">
         <div class="card-header">
             <div>
-                <p class="section-kicker">Concluido</p>
+                <p class="section-kicker">Concluído</p>
                 <h2>Resumo do lote</h2>
             </div>
         </div>
@@ -12,7 +12,7 @@
         <div class="list-stack">
             <div class="list-item"><strong>Cliente</strong><span>{{ client_name }}</span></div>
             <div class="list-item"><strong>Periodo</strong><span>{{ run_period }}</span></div>
-            <div class="list-item"><strong>Execucao vinculada</strong><span>#{{ conciliation_run_id }}</span></div>
+            <div class="list-item"><strong>Execução vinculada</strong><span>#{{ conciliation_run_id }}</span></div>
         </div>
         {% endif %}
         <section class="grid four-col compact-grid">
@@ -27,7 +27,7 @@
         </div>
     </div>
     <div class="card">
-        <p class="section-kicker">Historico</p>
+        <p class="section-kicker">Histórico</p>
         <div class="list-stack">
             {% for item in history %}
             <div class="list-item"><strong>{{ item.executed_at }}</strong><span>{{ item.user_name }} | {{ item.qtde_total_processado }} linhas</span></div>

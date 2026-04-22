@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_task_manager_nav.html" %}
+
+<section class="card ops-filter-card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Execução</p>
+            <h2>Tarefas operacionais</h2>
+        </div>
+        <div class="header-actions">
+            <div class="view-toggle" data-view-toggle>
+                <button type="button" class="toggle-pill is-active" data-view-target="kanban">Kanban</button>
+                <button type="button" class="toggle-pill" data-view-target="lista">Lista</button>
+            </div>
+            <details class="quick-create-disclosure" id="quick-create-task">
+                <summary>Novo rápido</summary>
+                <div class="quick-create-panel">
+                    <form action="/operacoes/clientes/0/tarefas" method="post" class="form" id="task-create-form" data-loading-form="true" data-loading-text="Criando tarefa...">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <label class="field"><span>Cliente</span><select name="client_id" id="task-create-client" required>{% for item in clients %}<option value="{{ item.id }}">{{ item.trade_name or item.legal_name }}</option>{% endfor %}</select></label>
+                        <label class="field"><span>Projeto</span><select name="project_id"><option value="">Sem projeto</option>{% for item in projects %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></label>
+                        <label class="field"><span>Título</span><input name="title" required placeholder="Ex.: Fechamento contábil abril"></label>
+                        <label class="field"><span>Vencimento</span><input type="date" name="due_date"></label>
+                        <label class="field"><span>Responsável</span><select name="assigned_user_id"><option value="">Sem responsável</option>{% for item in users %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></label>
+                        <label class="field"><span>Prioridade</span><select name="priority"><option value="normal">Normal</option><option value="alta">Alta</option><option value="baixa">Baixa</option></select></label>
+                        <button type="submit">Criar tarefa</button>
+                    </form>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <form action="/operacoes/gestor-tarefas/tarefas" method="get" class="toolbar-grid" data-loading-form="true" data-loading-text="Filtrando tarefas...">
+        <select name="client_id"><option value="">Todos os clientes</option>{% for item in clients %}<option value="{{ item.id }}" {% if task_filters.client_id == item.id %}selected{% endif %}>{{ item.trade_name or item.legal_name }}</option>{% endfor %}</select>
+        <select name="project_id"><option value="">Todos os projetos</option>{% for item in projects %}<option value="{{ item.id }}" {% if task_filters.project_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+        <select name="assigned_user_id"><option value="">Todos os responsáveis</option>{% for item in users %}<option value="{{ item.id }}" {% if task_filters.assigned_user_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+        <select name="status"><option value="">Todos os status</option><option value="pendente" {% if task_filters.status == "pendente" %}selected{% endif %}>A fazer</option><option value="em_execucao" {% if task_filters.status == "em_execucao" %}selected{% endif %}>Em andamento</option><option value="aguardando_cliente" {% if task_filters.status == "aguardando_cliente" %}selected{% endif %}>Em revisão</option><option value="atrasada" {% if task_filters.status == "atrasada" %}selected{% endif %}>Atrasadas</option></select>
+        <button type="submit">Filtrar</button>
+        <a href="/operacoes/gestor-tarefas/tarefas" class="ghost-button button-link" data-loading-link="true">Limpar</a>
+    </form>
+</section>
+
+<section class="grid four-col compact-grid">
+    {% for item in task_metrics %}
+    <article class="card metric-card ops-kpi-card">
+        <span class="metric-label">{{ item.label }}</span>
+        <strong>{{ item.value }}</strong>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="task-view-panel" data-view-panel="kanban">
+    <div class="kanban-grid">
+        {% for column in task_columns %}
+        <article class="kanban-column">
+            <header class="kanban-column-header">
+                <div>
+                    <span class="metric-label">{{ column.label }}</span>
+                    <strong>{{ column.items|length }}</strong>
+                </div>
+            </header>
+            <div class="kanban-stack">
+                {% for item in column.items %}
+                <article class="task-card task-card-{{ item.priority_tone }}">
+                    <div class="task-card-top">
+                        <strong>{{ item.title }}</strong>
+                        <span class="priority-badge tone-{{ item.priority_tone }}">{{ item.priority_label }}</span>
+                    </div>
+                    <div class="task-card-body">
+                        <span>{{ item.client_name }}</span>
+                        <span>{{ item.project_name }}</span>
+                        <span>SLA {{ item.due_date }}</span>
+                        <span>Tempo {{ item.logged_time_label }}</span>
+                        <span>Responsável {{ item.assignee_name }}</span>
+                    </div>
+                    <div class="task-card-actions">
+                        {% if item.active_time_entry_id %}
+                        <form action="/operacoes/tempo/{{ item.active_time_entry_id }}/pausar" method="post" data-loading-form="true" data-loading-text="Pausando tempo...">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="redirect_to" value="/operacoes/gestor-tarefas/tarefas">
+                            <button type="submit" class="ghost-button">Pausar</button>
+                        </form>
+                        {% else %}
+                        <form action="/operacoes/tarefas/{{ item.id }}/tempo/iniciar" method="post" data-loading-form="true" data-loading-text="Iniciando tempo...">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="redirect_to" value="/operacoes/gestor-tarefas/tarefas">
+                            <button type="submit" class="ghost-button">Iniciar tempo</button>
+                        </form>
+                        {% endif %}
+                        {% if item.can_complete %}
+                        <form action="/operacoes/tarefas/{{ item.id }}/status" method="post" data-loading-form="true" data-loading-text="Concluindo tarefa...">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="redirect_to" value="/operacoes/gestor-tarefas/tarefas">
+                            <button type="submit" name="status" value="concluida">Concluir</button>
+                        </form>
+                        {% endif %}
+                        <a href="{{ item.edit_href }}" class="button-link ghost-button" data-loading-link="true">Editar</a>
+                    </div>
+                </article>
+                {% else %}
+                <div class="empty-panel empty-panel-compact">
+                    <strong>Nada nesta etapa.</strong>
+                    <span>As tarefas desta coluna aparecerão aqui automaticamente.</span>
+                    <a href="#quick-create-task" class="button-link">Criar tarefa</a>
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="task-view-panel is-hidden" data-view-panel="lista">
+    <article class="card">
+        <div class="table-shell">
+            {% for item in task_rows %}
+            <div class="table-row table-row-rich ops-table-row">
+                <span><strong>{{ item.title }}</strong></span>
+                <span>{{ item.client_name }}</span>
+                <span>{{ item.project_name }}</span>
+                <span>{{ item.assignee_name }}</span>
+                <span>{{ item.due_date }}</span>
+                <span>{{ item.logged_time_label }}</span>
+            </div>
+            {% else %}
+            <div class="empty-panel">
+                <strong>Você ainda não tem tarefas.</strong>
+                <span>Crie a primeira para começar a organizar a operação do BPO.</span>
+                <a href="#quick-create-task" class="button-link">Criar tarefa</a>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+    const taskForm = document.getElementById("task-create-form");
+    const clientField = document.getElementById("task-create-client");
+    if (taskForm && clientField) {
+        const syncAction = () => {
+            const clientId = clientField.value || "0";
+            taskForm.action = `/operacoes/clientes/${clientId}/tarefas`;
+        };
+        clientField.addEventListener("change", syncAction);
+        syncAction();
+    }
+
+    const toggleRoot = document.querySelector("[data-view-toggle]");
+    const panels = document.querySelectorAll("[data-view-panel]");
+    if (toggleRoot) {
+        toggleRoot.querySelectorAll("[data-view-target]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const target = button.getAttribute("data-view-target");
+                toggleRoot.querySelectorAll("[data-view-target]").forEach((item) => item.classList.remove("is-active"));
+                button.classList.add("is-active");
+                panels.forEach((panel) => panel.classList.toggle("is-hidden", panel.getAttribute("data-view-panel") !== target));
+            });
+        });
+    }
+</script>
+{% endblock %}

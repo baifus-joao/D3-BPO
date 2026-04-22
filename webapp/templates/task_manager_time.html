@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_task_manager_nav.html" %}
+
+<section class="grid four-col compact-grid">
+    {% for item in time_metrics %}<article class="card metric-card"><span class="metric-label">{{ item.label }}</span><strong>{{ item.value }}</strong></article>{% endfor %}
+</section>
+
+<section class="grid two-col">
+    <article class="card">
+        <div class="card-header"><div><p class="section-kicker">Ativos</p><h2>Apontamentos em andamento</h2></div></div>
+        <div class="table-shell">
+            {% for item in active_time_entries %}
+            <div class="queue-row">
+                <div class="queue-main">
+                    <strong>{{ item.task_title }}</strong>
+                    <span>{{ item.client_name }} | {{ item.user_name }}</span>
+                    <span>Iniciado em {{ item.started_at }} | {{ item.duration_label }}</span>
+                </div>
+                <form action="/operacoes/tempo/{{ item.id }}/pausar" method="post" class="queue-actions" data-loading-form="true" data-loading-text="Pausando tempo...">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="redirect_to" value="/operacoes/gestor-tarefas/tempo">
+                    <button type="submit">Pausar</button>
+                </form>
+            </div>
+            {% else %}
+            <p class="empty-state">Nenhum apontamento ativo.</p>
+            {% endfor %}
+        </div>
+    </article>
+    <article class="card">
+        <div class="card-header"><div><p class="section-kicker">Equipe</p><h2>Horas por colaborador</h2></div></div>
+        <div class="list-stack">
+            {% for item in time_by_user %}
+            <article class="list-item metric-inline"><strong>{{ item.label }}</strong><span>{{ item.value }}</span></article>
+            {% else %}
+            <p class="empty-state">Sem horas registradas.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="card">
+    <div class="card-header"><div><p class="section-kicker">Histórico</p><h2>Apontamentos recentes</h2></div></div>
+    <div class="table-shell">
+        {% for item in recent_time_entries %}
+        <div class="table-row table-row-rich">
+            <span>{{ item.task_title }}</span>
+            <span>{{ item.client_name }}</span>
+            <span>{{ item.user_name }}</span>
+            <span>{{ item.started_at }}</span>
+            <span>{{ item.ended_at }}</span>
+            <span>{{ item.duration_label }}</span>
+        </div>
+        {% else %}
+        <p class="empty-state">Nenhum apontamento encontrado.</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

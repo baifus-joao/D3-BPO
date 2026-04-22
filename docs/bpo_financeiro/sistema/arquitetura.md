@@ -108,9 +108,27 @@ Entrada do ERP financeiro completo dos clientes:
 - evitar concentrar novas regras em um único arquivo
 - expandir o sistema sem misturar financeiro da D3 com financeiro dos clientes
 
+## Evolução arquitetural recente
+
+- `healthz` passou a ser leve e sem consulta ao banco
+- `readyz` ficou reservado para verificação real de banco
+- startup foi movido para `lifespan`
+- configuração foi centralizada em `webapp/config.py`
+- bootstrap foi movido para `webapp/bootstrap.py`
+- logging foi isolado em `webapp/logging_utils.py`
+- autenticação, health e DilmarIA já usam routers dedicados
+
+## Pendências arquiteturais abertas
+
+- continuar a extração das rotas restantes de `app_modular.py`
+- reduzir concentração de queries pesadas nas telas principais
+- validar arquitetura de deploy com banco definitivo de produção
+- após estabilização, simplificar fluxo de migration no deploy
+
 ## Links relacionados
 
 - [[sistema/visao-geral]]
 - [[decisoes/decisoes-iniciais]]
 - [[financeiro/README]]
 - [[tarefas/README]]
+- [[processos/pendencias-pos-refatoracao-e-deploy]]

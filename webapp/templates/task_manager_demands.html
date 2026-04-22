@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_task_manager_nav.html" %}
+
+<section class="card ops-filter-card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Pipeline</p>
+            <h2>Demandas de entrada</h2>
+        </div>
+        <details class="quick-create-disclosure" id="quick-create-demand">
+            <summary>Nova demanda</summary>
+            <div class="quick-create-panel">
+                <form action="/operacoes/gestor-tarefas/demandas" method="post" class="form" data-loading-form="true" data-loading-text="Salvando demanda...">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <label class="field"><span>Cliente</span><select name="client_id" required>{% for item in clients %}<option value="{{ item.id }}">{{ item.trade_name or item.legal_name }}</option>{% endfor %}</select></label>
+                    <label class="field"><span>Projeto</span><select name="project_id"><option value="">Sem projeto</option>{% for item in projects %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></label>
+                    <label class="field"><span>Título</span><input name="title" required placeholder="Ex.: Cliente pediu relatório financeiro"></label>
+                    <label class="field"><span>Origem</span><select name="source"><option value="manual">Manual</option><option value="whatsapp">WhatsApp</option><option value="email">E-mail</option></select></label>
+                    <label class="field"><span>Tipo</span><select name="demand_type"><option value="operacional">Operacional</option><option value="financeiro">Financeiro</option><option value="fiscal">Fiscal</option></select></label>
+                    <label class="field"><span>Prioridade</span><select name="priority"><option value="normal">Normal</option><option value="alta">Alta</option><option value="baixa">Baixa</option></select></label>
+                    <button type="submit">Registrar demanda</button>
+                </form>
+            </div>
+        </details>
+    </div>
+
+    <form action="/operacoes/gestor-tarefas/demandas" method="get" class="toolbar-grid" data-loading-form="true" data-loading-text="Filtrando demandas...">
+        <select name="client_id"><option value="">Todos os clientes</option>{% for item in clients %}<option value="{{ item.id }}" {% if demand_filters.client_id == item.id %}selected{% endif %}>{{ item.trade_name or item.legal_name }}</option>{% endfor %}</select>
+        <select name="status"><option value="">Todos os status</option><option value="aberta" {% if demand_filters.status == "aberta" %}selected{% endif %}>Entrada</option><option value="triagem" {% if demand_filters.status == "triagem" %}selected{% endif %}>Triagem</option><option value="convertida" {% if demand_filters.status == "convertida" %}selected{% endif %}>Convertida</option><option value="concluida" {% if demand_filters.status == "concluida" %}selected{% endif %}>Concluída</option></select>
+        <select name="demand_type"><option value="">Todos os tipos</option><option value="financeiro" {% if demand_filters.demand_type == "financeiro" %}selected{% endif %}>Financeiro</option><option value="fiscal" {% if demand_filters.demand_type == "fiscal" %}selected{% endif %}>Fiscal</option><option value="operacional" {% if demand_filters.demand_type == "operacional" %}selected{% endif %}>Operacional</option></select>
+        <button type="submit">Filtrar</button>
+        <a href="/operacoes/gestor-tarefas/demandas" class="ghost-button button-link" data-loading-link="true">Limpar</a>
+    </form>
+</section>
+
+<section class="grid four-col compact-grid">
+    {% for item in demand_metrics %}
+    <article class="card metric-card ops-kpi-card">
+        <span class="metric-label">{{ item.label }}</span>
+        <strong>{{ item.value }}</strong>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="pipeline-grid">
+    {% for column in demand_columns %}
+    <article class="pipeline-column">
+        <header class="kanban-column-header">
+            <div>
+                <span class="metric-label">{{ column.label }}</span>
+                <strong>{{ column.items|length }}</strong>
+            </div>
+        </header>
+        <div class="kanban-stack">
+            {% for item in column.items %}
+            <article class="task-card task-card-{{ item.priority_tone }}">
+                <div class="task-card-top">
+                    <strong>{{ item.title }}</strong>
+                    <span class="priority-badge tone-{{ item.priority_tone }}">{{ item.priority_label }}</span>
+                </div>
+                <div class="task-card-body">
+                    <span>{{ item.client_name }}</span>
+                    <span>{{ item.project_name }}</span>
+                    <span>{{ item.source_label }} · {{ item.demand_type_label }}</span>
+                </div>
+                <div class="task-card-actions">
+                    {% if item.can_convert %}
+                    <form action="/operacoes/gestor-tarefas/demandas/{{ item.id }}/converter" method="post" data-loading-form="true" data-loading-text="Convertendo demanda...">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit">Converter em tarefa</button>
+                    </form>
+                    {% else %}
+                    <span class="status-badge status-success">Tarefa #{{ item.converted_task_id }}</span>
+                    {% endif %}
+                </div>
+            </article>
+            {% else %}
+            <div class="empty-panel empty-panel-compact">
+                <strong>Sem itens aqui.</strong>
+                <span>As demandas dessa etapa vão aparecer neste pipeline.</span>
+                <a href="#quick-create-demand" class="button-link">Registrar demanda</a>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+    {% endfor %}
+</section>
+{% endblock %}

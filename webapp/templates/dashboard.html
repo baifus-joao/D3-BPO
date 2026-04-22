@@ -19,7 +19,7 @@
         </div>
     </div>
     <div class="card">
-        <p class="section-kicker">Proximos</p>
+        <p class="section-kicker">Próximos</p>
         <div class="list-stack">
             {% for item in upcoming %}
             <article class="list-item">
@@ -31,6 +31,17 @@
             {% endfor %}
         </div>
     </div>
+</section>
+
+<section class="grid four-col">
+    {% for module in dashboard_context.modules %}
+    <a href="{{ module.href }}" class="context-card-link" data-loading-link="true">
+        <article class="card metric-card dashboard-module-card">
+            <span class="metric-label">{{ module.title }}</span>
+            <span>{{ module.description }}</span>
+        </article>
+    </a>
+    {% endfor %}
 </section>
 
 <section class="grid four-col">

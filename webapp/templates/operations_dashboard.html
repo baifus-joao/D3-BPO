@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="ops-module-strip">
+    <a href="/operacoes/gestor-tarefas" class="ops-module-pill" data-loading-link="true">
+        <span class="metric-label">Core</span>
+        <strong>Gestor de tarefas</strong>
+        <span>Execução diária do time</span>
+    </a>
+    <a href="/operacoes/conciliacao" class="ops-module-pill" data-loading-link="true">
+        <span class="metric-label">Rotina</span>
+        <strong>Conciliação</strong>
+        <span>Fechamentos e divergências</span>
+    </a>
+    <a href="/operacoes/dilmaria" class="ops-module-pill" data-loading-link="true">
+        <span class="metric-label">Apoio</span>
+        <strong>DilmarIA</strong>
+        <span>Assistência operacional</span>
+    </a>
+</section>
+
+<section class="grid five-col compact-grid">
+    {% for item in manager_metrics %}
+    <a href="{{ item.href }}" class="context-card-link" data-loading-link="true">
+        <article class="card metric-card ops-kpi-card">
+            <span class="metric-label">{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+            <span>{{ item.delta }}</span>
+        </article>
+    </a>
+    {% endfor %}
+</section>
+
+<section class="ops-dashboard-grid">
+    <article class="card ops-focus-card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">SLA</p>
+                <h2>Próximas entregas</h2>
+            </div>
+            <a href="/operacoes/gestor-tarefas/alertas" class="secondary-link" data-loading-link="true">Ver alertas</a>
+        </div>
+        <div class="list-stack">
+            {% for item in upcoming_tasks %}
+            <a href="{{ item.href or '/operacoes/gestor-tarefas/tarefas' }}" class="context-card-link" data-loading-link="true">
+                <article class="ops-activity-item">
+                    <div>
+                        <strong>{{ item.title }}</strong>
+                        <span>{{ item.client_name }} · Vencimento {{ item.due_date }}</span>
+                    </div>
+                    <span class="status-badge status-{{ item.sla_tone }}">{{ item.sla_label }}</span>
+                </article>
+            </a>
+            {% else %}
+            <div class="empty-panel">
+                <strong>Nenhuma entrega crítica agora.</strong>
+                <span>Seu SLA está sob controle neste momento.</span>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card ops-focus-card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Ação imediata</p>
+                <h2>Tarefas críticas</h2>
+            </div>
+            <a href="/operacoes/gestor-tarefas/tarefas?status=atrasada" class="secondary-link" data-loading-link="true">Abrir tarefas</a>
+        </div>
+        <div class="list-stack">
+            {% for item in critical_tasks %}
+            <article class="ops-task-inline">
+                <div>
+                    <strong>{{ item.title }}</strong>
+                    <span>{{ item.client_name }} · {{ item.project_name }}</span>
+                </div>
+                <div class="ops-inline-meta">
+                    <span class="priority-badge tone-{{ item.priority_tone }}">{{ item.priority_label }}</span>
+                    <span class="status-badge status-{{ item.status_class }}">{{ item.status_label }}</span>
+                </div>
+            </article>
+            {% else %}
+            <div class="empty-panel">
+                <strong>Nenhuma tarefa crítica encontrada.</strong>
+                <span>As prioridades urgentes vão aparecer aqui.</span>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="ops-dashboard-grid">
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Entrada</p>
+                <h2>Demandas recentes</h2>
+            </div>
+            <a href="/operacoes/gestor-tarefas/demandas" class="secondary-link" data-loading-link="true">Ver pipeline</a>
+        </div>
+        <div class="list-stack">
+            {% for item in recent_demands %}
+            <article class="ops-activity-item">
+                <div>
+                    <strong>{{ item.title }}</strong>
+                    <span>{{ item.client_name }} · {{ item.source_label }} · {{ item.demand_type_label }}</span>
+                </div>
+                <span class="status-badge status-neutral">{{ item.status_label }}</span>
+            </article>
+            {% else %}
+            <div class="empty-panel">
+                <strong>Nenhuma demanda aberta.</strong>
+                <span>Quando chegar trabalho novo, ele aparece aqui para triagem.</span>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Timeline</p>
+                <h2>Atividades recentes</h2>
+            </div>
+            <a href="/operacoes/gestor-tarefas/performance" class="secondary-link" data-loading-link="true">Ver performance</a>
+        </div>
+        <div class="list-stack">
+            {% for item in recent_activities %}
+            <article class="ops-activity-item">
+                <div>
+                    <strong>{{ item.description }}</strong>
+                    <span>{{ item.type }} · {{ item.reference }} · {{ item.responsible }}</span>
+                </div>
+                <span>{{ item.event_at }}</span>
+            </article>
+            {% else %}
+            <div class="empty-panel">
+                <strong>Sem atividade recente.</strong>
+                <span>Os eventos do time vão aparecer aqui em ordem cronológica.</span>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

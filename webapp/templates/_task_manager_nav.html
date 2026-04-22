@@ -1,0 +1,9 @@
+<section class="card task-manager-nav-card">
+    <div class="task-manager-nav">
+        {% for item in task_manager_tabs %}
+        <a href="{{ item.href }}" class="task-manager-tab {% if item.active %}active{% endif %}" data-loading-link="true">
+            {{ item.label }}
+        </a>
+        {% endfor %}
+    </div>
+</section>

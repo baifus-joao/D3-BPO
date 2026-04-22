@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">Gestão interna</p>
+            <h2>Contas a Pagar e Receber</h2>
+        </div>
+        <div class="actions">
+            <a href="{{ page_urls.export }}" class="ghost-button button-link" data-loading-link="true" data-loading-text="Gerando planilha...">Exportar</a>
+            <a href="{{ page_urls.new_entry }}" class="button-link" data-loading-link="true" data-loading-text="Abrindo formulário...">Novo lançamento</a>
+        </div>
+    </div>
+    <p class="page-subtitle">Relatório explícito de contas a pagar e contas a receber da gestão interna da D3.</p>
+
+    <form action="{{ page_urls.base }}" method="get" class="cashflow-filter-grid internal-finance-filter-grid" data-loading-form="true" data-loading-text="Aplicando filtros...">
+        <label class="field field-compact">
+            <span>De</span>
+            <input type="date" name="date_from" value="{{ filters.date_from }}">
+        </label>
+        <label class="field field-compact">
+            <span>At?</span>
+            <input type="date" name="date_to" value="{{ filters.date_to }}">
+        </label>
+        <label class="field field-compact">
+            <span>Busca</span>
+            <input type="text" name="search" value="{{ filters.search }}" placeholder="Descrição, interessado ou subcategoria">
+        </label>
+        <label class="field field-compact">
+            <span>Interessado</span>
+            <input type="text" name="interested_party" value="{{ filters.interested_party }}" placeholder="Interessado">
+        </label>
+        <label class="field field-compact">
+            <span>Categoria</span>
+            <select name="category_id">
+                <option value="">Todas</option>
+                {% for item in categories %}
+                <option value="{{ item.id }}" {% if filters.category_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="field field-compact">
+            <span>Subcategoria</span>
+            <input type="text" name="subcategory" value="{{ filters.subcategory }}" placeholder="Subcategoria">
+        </label>
+        <label class="field field-compact">
+            <span>Modo</span>
+            <select name="entry_mode">
+                <option value="">Todos</option>
+                <option value="avista" {% if filters.entry_mode == "avista" %}selected{% endif %}>? vista</option>
+                <option value="parcelado" {% if filters.entry_mode == "parcelado" %}selected{% endif %}>Parcelado</option>
+                <option value="projecao" {% if filters.entry_mode == "projecao" %}selected{% endif %}>Proje?o</option>
+            </select>
+        </label>
+        <label class="field field-compact">
+            <span>Loja</span>
+            <select name="store_id">
+                <option value="">Todas</option>
+                {% for item in stores %}
+                <option value="{{ item.id }}" {% if filters.store_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="field field-compact">
+            <span>Conta</span>
+            <select name="account_id">
+                <option value="">Todas</option>
+                {% for item in accounts %}
+                <option value="{{ item.id }}" {% if filters.account_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="field field-compact">
+            <span>Status</span>
+            <select name="status">
+                <option value="">Todos</option>
+                <option value="previsto" {% if filters.status == "previsto" %}selected{% endif %}>Previsto</option>
+                <option value="realizado" {% if filters.status == "realizado" %}selected{% endif %}>Realizado</option>
+            </select>
+        </label>
+        <div class="cashflow-filter-actions">
+            <button type="submit">Filtrar</button>
+            <a href="{{ page_urls.base }}" class="ghost-button button-link" data-loading-link="true">Limpar</a>
+        </div>
+    </form>
+</section>
+
+<section class="grid four-col cashflow-kpi-grid">
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">Saldo atual</span>
+        <strong>{{ summary.saldo_atual|currency }}</strong>
+    </article>
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">Contas a receber</span>
+        <strong>{{ summary.entradas_periodo|currency }}</strong>
+    </article>
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">Contas a pagar</span>
+        <strong>{{ summary.saidas_periodo|currency }}</strong>
+    </article>
+    <article class="card metric-card kpi-card">
+        <span class="metric-label">Resultado</span>
+        <strong>{{ summary.resultado_periodo|currency }}</strong>
+    </article>
+</section>
+
+<section class="grid two-col finance-reports-grid">
+    <article class="card" id="contas-pagar">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Relatório</p>
+                <h2>Contas a pagar</h2>
+            </div>
+            <div class="quick-entry-hints">
+                <span class="status-badge status-neutral">{{ payables_report.count }} registros</span>
+                <span class="status-badge status-warning">{{ payables_report.pending_count }} previstos</span>
+            </div>
+        </div>
+        <p class="finance-report-total">Total filtrado: <strong>{{ payables_report.total|currency }}</strong></p>
+        {% if payables_report.rows %}
+        <div class="table-wrapper">
+            <table class="data-table finance-report-table">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Conta</th>
+                        <th>Classificação</th>
+                        <th>Status</th>
+                        <th>Valor</th>
+                        <th>A?es</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in payables_report.rows %}
+                    <tr>
+                        <td>{{ item.date}}</td>
+                        <td>
+                            <strong>{{ item.description }}</strong>
+                            <span class="table-secondary">{{ item.interested_party }}</span>
+                            <span class="table-secondary">{{ item.entry_mode_label }}{% if item.installment_label != "-" %} | {{ item.installment_label }}{% endif %}</span>
+                        </td>
+                        <td>
+                            <strong>{{ item.category }}</strong>
+                            <span class="table-secondary">{{ item.subcategory }}</span>
+                        </td>
+                        <td><span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span></td>
+                        <td>{{ item.amount }}</td>
+                        <td class="table-actions">
+                            <a href="{{ item.detail_url }}" class="ghost-button button-link" data-loading-link="true">Abrir</a>
+                            <a href="{{ item.duplicate_url }}" class="ghost-button button-link" data-loading-link="true">Duplicar</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if payables_report.has_more %}
+        <p class="table-secondary">Mostrando os 50 registros mais recentes. Use os filtros para refinar a consulta.</p>
+        {% endif %}
+        {% else %}
+        <p class="empty-state">Nenhuma conta a pagar encontrada com os filtros atuais.</p>
+        {% endif %}
+    </article>
+
+    <article class="card" id="contas-receber">
+        <div class="card-header">
+            <div>
+                <p class="section-kicker">Relatório</p>
+                <h2>Contas a receber</h2>
+            </div>
+            <div class="quick-entry-hints">
+                <span class="status-badge status-neutral">{{ receivables_report.count }} registros</span>
+                <span class="status-badge status-warning">{{ receivables_report.pending_count }} previstos</span>
+            </div>
+        </div>
+        <p class="finance-report-total">Total filtrado: <strong>{{ receivables_report.total|currency }}</strong></p>
+        {% if receivables_report.rows %}
+        <div class="table-wrapper">
+            <table class="data-table finance-report-table">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Conta</th>
+                        <th>Classificação</th>
+                        <th>Status</th>
+                        <th>Valor</th>
+                        <th>A?es</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in receivables_report.rows %}
+                    <tr>
+                        <td>{{ item.date}}</td>
+                        <td>
+                            <strong>{{ item.description }}</strong>
+                            <span class="table-secondary">{{ item.interested_party }}</span>
+                            <span class="table-secondary">{{ item.entry_mode_label }}{% if item.installment_label != "-" %} | {{ item.installment_label }}{% endif %}</span>
+                        </td>
+                        <td>
+                            <strong>{{ item.category }}</strong>
+                            <span class="table-secondary">{{ item.subcategory }}</span>
+                        </td>
+                        <td><span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span></td>
+                        <td>{{ item.amount }}</td>
+                        <td class="table-actions">
+                            <a href="{{ item.detail_url }}" class="ghost-button button-link" data-loading-link="true">Abrir</a>
+                            <a href="{{ item.duplicate_url }}" class="ghost-button button-link" data-loading-link="true">Duplicar</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if receivables_report.has_more %}
+        <p class="table-secondary">Mostrando os 50 registros mais recentes. Use os filtros para refinar a consulta.</p>
+        {% endif %}
+        {% else %}
+        <p class="empty-state">Nenhuma conta a receber encontrada com os filtros atuais.</p>
+        {% endif %}
+    </article>
+</section>
+
+<a href="{{ page_urls.new_entry }}" class="finance-fab" aria-label="Novo lançamento" data-loading-link="true" data-loading-text="Abrindo formulário...">+</a>
+{% endblock %}

@@ -36,6 +36,11 @@
 
 * { box-sizing: border-box; }
 
+html,
+body {
+    overflow-x: hidden;
+}
+
 body {
     margin: 0;
     min-height: 100vh;
@@ -109,6 +114,8 @@ a { color: inherit; }
     display: grid;
     grid-template-columns: 248px minmax(0, 1fr);
     min-height: 100vh;
+    width: 100%;
+    min-width: 0;
 }
 
 .sidebar {
@@ -118,6 +125,7 @@ a { color: inherit; }
     padding: 24px 18px;
     border-right: 1px solid var(--border);
     background: color-mix(in srgb, var(--surface) 88%, transparent);
+    min-width: 0;
 }
 
 .sidebar-section {
@@ -209,6 +217,8 @@ a { color: inherit; }
 
 .content-area {
     padding: 24px;
+    min-width: 0;
+    overflow-x: hidden;
 }
 
 .header {
@@ -272,9 +282,17 @@ small {
 .toolbar-grid {
     display: grid;
     gap: 18px;
+    min-width: 0;
 }
 
-.grid.two-col { grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr); }
+.workspace > *,
+.grid > *,
+.header > *,
+.card > * {
+    min-width: 0;
+}
+
+.grid.two-col { grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.9fr); }
 .grid.three-col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid.four-col { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .finance-metrics-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
@@ -308,7 +326,7 @@ small {
 
 .cashflow-filter-grid {
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(180px, 0.9fr);
+    grid-template-columns: repeat(7, minmax(120px, 1fr));
     gap: 14px;
     align-items: end;
     padding: 18px;
@@ -334,9 +352,31 @@ small {
     gap: 10px;
 }
 
+.cashflow-filter-grid .cashflow-filter-actions,
+.internal-finance-filter-grid .cashflow-filter-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+}
+
+.cashflow-filter-grid .cashflow-filter-actions > *,
+.internal-finance-filter-grid .cashflow-filter-actions > * {
+    min-width: 160px;
+}
+
 .cashflow-filter-actions .button-link,
 .cashflow-filter-actions .ghost-button {
     width: 100%;
+}
+
+.cashflow-filter-grid .cashflow-filter-actions .button-link,
+.cashflow-filter-grid .cashflow-filter-actions .ghost-button,
+.cashflow-filter-grid .cashflow-filter-actions button,
+.internal-finance-filter-grid .cashflow-filter-actions .button-link,
+.internal-finance-filter-grid .cashflow-filter-actions .ghost-button,
+.internal-finance-filter-grid .cashflow-filter-actions button {
+    width: auto;
 }
 
 .kpi-card {
@@ -432,6 +472,10 @@ small {
     color: var(--muted);
     border: 1px solid var(--border);
     font-weight: 700;
+    min-height: 58px;
+    padding: 12px 14px;
+    line-height: 1.2;
+    text-wrap: balance;
 }
 
 .segment-button.is-active {
@@ -608,6 +652,10 @@ button,
     background: var(--surface-3);
 }
 
+.metric-card strong {
+    display: block;
+}
+
 .hero-card {
     display: grid;
     grid-template-columns: 1.2fr 0.8fr;
@@ -704,6 +752,12 @@ button,
 .mini-grid {
     display: grid;
     gap: 12px;
+}
+
+.dashboard-module-card {
+    min-height: 152px;
+    align-content: start;
+    gap: 10px;
 }
 
 .table-row,
@@ -876,15 +930,661 @@ button,
     width: auto;
 }
 
-@media (max-width: 1180px) {
+.table-wrapper {
+    overflow-x: auto;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+}
+
+.data-table th {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.table-secondary {
+    display: block;
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.table-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.finance-title-form {
+    display: grid;
+    gap: 18px;
+}
+
+.checkbox-field {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.checkbox-field input {
+    width: auto;
+}
+
+.inset-card {
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+}
+
+.installment-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.installment-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.card-subsection {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+}
+
+.finance-reports-grid {
+    align-items: start;
+}
+
+.finance-report-total {
+    margin-bottom: 14px;
+    color: var(--muted);
+}
+
+.finance-report-table td:last-child,
+.finance-report-table th:last-child {
+    white-space: nowrap;
+}
+
+.finance-fab {
+    position: fixed;
+    right: 28px;
+    bottom: 28px;
+    width: 58px;
+    height: 58px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--bg);
+    font-size: 2rem;
+    font-weight: 800;
+    text-decoration: none;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.26);
+    z-index: 40;
+}
+
+.finance-fab:hover {
+    transform: translateY(-2px);
+}
+
+.internal-finance-filter-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.segmented-control-three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.finance-title-form .entry-row-top {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    align-items: start;
+}
+
+.finance-title-form .nature-type,
+.finance-title-form .nature-mode {
+    grid-column: span 3;
+}
+
+.finance-title-form .nature-status,
+.finance-title-form .nature-date,
+.finance-title-form .nature-value,
+.finance-title-form .nature-installments {
+    grid-column: span 2;
+}
+
+.finance-title-form .segment-button {
+    min-height: 72px;
+    font-size: 0.98rem;
+}
+
+.finance-title-form .segmented-control-three .segment-button {
+    font-size: 0.92rem;
+}
+
+.internal-finance-entry-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.projection-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.schedule-panel[hidden] {
+    display: none;
+}
+
+.finance-report-table .table-actions {
+    min-width: 170px;
+}
+
+.grid.five-col {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.task-manager-nav-card {
+    padding: 14px 18px;
+}
+
+.task-manager-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.task-manager-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 16px;
+    text-decoration: none;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    font-weight: 700;
+}
+
+.task-manager-tab.active,
+.task-manager-tab:hover {
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+
+.metric-inline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.dashboard-main-grid,
+.table-row-rich {
+    min-width: 0;
+}
+
+.table-row-rich {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.task-manager-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+}
+
+.stack-actions {
+    display: grid;
+    gap: 10px;
+}
+
+.app-operations {
+    background:
+        radial-gradient(circle at top right, rgba(14, 167, 127, 0.08), transparent 28%),
+        linear-gradient(180deg, #f4f7f8 0%, #edf2f4 100%);
+}
+
+.app-operations .sidebar {
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.app-operations .header,
+.app-operations .sidebar-system-switch,
+.app-operations .sidebar-box,
+.app-operations .card {
+    box-shadow: 0 10px 30px rgba(18, 34, 41, 0.06);
+}
+
+.sidebar-brand-block {
+    display: grid;
+    gap: 8px;
+}
+
+.sidebar-brand-block small {
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+.ops-topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.ops-topbar-search {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    min-height: 58px;
+    padding: 0 18px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+
+.ops-search-icon,
+.ops-shortcut {
+    color: var(--muted);
+}
+
+.ops-topbar-search input {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    min-height: auto;
+}
+
+.ops-topbar-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.time-dock {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    min-height: 58px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+
+.time-dock.is-active {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.time-dock-copy {
+    display: grid;
+    gap: 2px;
+}
+
+.time-dock-copy strong {
+    font-size: 1rem;
+}
+
+.time-dock-button {
+    min-width: 120px;
+}
+
+.header-operations {
+    margin-bottom: 22px;
+}
+
+.ops-module-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.ops-module-pill {
+    display: grid;
+    gap: 6px;
+    padding: 18px 20px;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.ops-module-pill:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+    box-shadow: 0 16px 28px rgba(18, 34, 41, 0.08);
+}
+
+.ops-kpi-card {
+    min-height: 118px;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.ops-kpi-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
+.ops-dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+    gap: 18px;
+}
+
+.ops-focus-card {
+    min-height: 100%;
+}
+
+.ops-activity-item,
+.ops-action-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    background: var(--surface-3);
+}
+
+.ops-activity-item > div,
+.ops-action-row {
+    display: grid;
+    gap: 4px;
+}
+
+.ops-action-row {
+    text-decoration: none;
+    transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.ops-action-row:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface-3));
+}
+
+.empty-panel {
+    display: grid;
+    gap: 6px;
+    padding: 18px;
+    border: 1px dashed color-mix(in srgb, var(--accent) 24%, var(--border));
+    background: color-mix(in srgb, var(--accent) 4%, var(--surface-2));
+}
+
+.empty-panel-compact {
+    padding: 14px;
+}
+
+.ops-filter-card {
+    display: grid;
+    gap: 18px;
+}
+
+.quick-create-disclosure {
+    position: relative;
+}
+
+.quick-create-disclosure summary {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 14px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    font-weight: 700;
+}
+
+.quick-create-disclosure summary::-webkit-details-marker {
+    display: none;
+}
+
+.quick-create-panel {
+    width: 360px;
+    margin-top: 10px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+
+.view-toggle {
+    display: inline-flex;
+    gap: 8px;
+}
+
+.toggle-pill {
+    min-width: 98px;
+    background: var(--surface-2);
+    color: var(--muted);
+    border: 1px solid var(--border);
+}
+
+.toggle-pill.is-active {
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+}
+
+.task-view-panel.is-hidden {
+    display: none;
+}
+
+.kanban-grid,
+.pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.kanban-column,
+.pipeline-column {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.kanban-column-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.kanban-stack {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+}
+
+.task-card {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.task-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 24px rgba(17, 35, 43, 0.08);
+}
+
+.task-card-error {
+    border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
+}
+
+.task-card-warning {
+    border-color: color-mix(in srgb, var(--warning) 36%, var(--border));
+}
+
+.task-card-success {
+    border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+}
+
+.task-card-top,
+.project-card-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.task-card-body,
+.client-card-body,
+.project-card-body {
+    display: grid;
+    gap: 6px;
+    color: var(--muted);
+}
+
+.task-card-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.priority-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    font-size: 0.8rem;
+    font-weight: 800;
+    border-radius: 999px;
+}
+
+.tone-error {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.tone-warning {
+    color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.tone-success {
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 18%, transparent);
+}
+
+.tone-neutral {
+    color: var(--muted);
+    background: var(--surface-3);
+}
+
+.ops-table-row {
+    background: var(--surface-2);
+}
+
+.project-card-grid,
+.client-list-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.project-card,
+.client-dashboard-card {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.project-card:hover,
+.client-dashboard-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+.project-card h3 {
+    margin: 2px 0 0;
+    font-size: 1.2rem;
+}
+
+.progress-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.progress-bar {
+    height: 10px;
+    background: var(--surface-3);
+    overflow: hidden;
+}
+
+.progress-bar span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 65%, white));
+}
+
+@media (max-width: 980px) {
     .shell { grid-template-columns: 1fr; }
     .sidebar { position: static; height: auto; }
     .grid.two-col,
     .grid.three-col,
     .grid.four-col,
+    .grid.five-col,
     .finance-metrics-grid,
     .charts-grid,
-    .hero-card {
+    .hero-card,
+    .ops-module-strip,
+    .kanban-grid,
+    .pipeline-grid,
+    .project-card-grid,
+    .client-list-grid,
+    .ops-dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    .ops-topbar {
         grid-template-columns: 1fr;
     }
     .cashflow-filter-grid {
@@ -892,22 +1592,47 @@ button,
     }
     .cashflow-filter-actions {
         grid-column: 1 / -1;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        justify-content: stretch;
     }
     .entry-row-top,
     .entry-row-bottom {
         grid-template-columns: 1fr 1fr;
+    }
+    .internal-finance-filter-grid,
+    .internal-finance-entry-grid,
+    .projection-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .cadastro-form-three,
     .cadastro-form-account,
     .cadastro-form-category {
         grid-template-columns: 1fr;
     }
+    .detail-grid {
+        grid-template-columns: 1fr;
+    }
+    .finance-title-form .entry-row-top {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .finance-title-form .nature-type,
+    .finance-title-form .nature-mode,
+    .finance-title-form .nature-status,
+    .finance-title-form .nature-date,
+    .finance-title-form .nature-value,
+    .finance-title-form .nature-installments {
+        grid-column: auto;
+    }
+    .task-manager-row,
+    .table-row-rich {
+        grid-template-columns: 1fr;
+    }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 760px) {
     .content-area { padding: 14px; }
     .header { flex-direction: column; }
+    .ops-topbar-actions { flex-direction: column; align-items: stretch; }
+    .time-dock { grid-template-columns: 1fr; }
     .system-selector-topbar { flex-direction: column; align-items: stretch; }
     .system-selector-body { padding: 22px; }
     .system-selector-grid { grid-template-columns: 1fr; }
@@ -917,8 +1642,17 @@ button,
     .entry-row-bottom {
         grid-template-columns: 1fr;
     }
+    .internal-finance-filter-grid,
+    .internal-finance-entry-grid,
+    .projection-grid {
+        grid-template-columns: 1fr;
+    }
     .queue-row {
         grid-template-columns: 1fr;
+    }
+    .task-card-actions,
+    .ops-activity-item {
+        flex-direction: column;
     }
     .pending-card-header,
     .pending-meta {
@@ -927,7 +1661,22 @@ button,
     .queue-actions {
         justify-content: stretch;
     }
-    .cashflow-filter-actions {
+    .cashflow-filter-grid .cashflow-filter-actions,
+    .internal-finance-filter-grid .cashflow-filter-actions {
+        flex-direction: column;
+    }
+    .installment-row,
+    .table-actions,
+    .form-actions {
         grid-template-columns: 1fr;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .finance-fab {
+        right: 18px;
+        bottom: 18px;
+    }
+    .quick-create-panel {
+        width: min(100vw - 56px, 100%);
     }
 }

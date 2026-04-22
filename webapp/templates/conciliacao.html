@@ -5,7 +5,7 @@
         <div class="card-header">
             <div>
                 <p class="section-kicker">Nova execucao</p>
-                <h2>Conciliacao</h2>
+                <h2>Conciliação</h2>
             </div>
         </div>
         {% if error %}
@@ -75,7 +75,7 @@
 <section class="card">
     <div class="card-header">
         <div>
-            <p class="section-kicker">Historico</p>
+            <p class="section-kicker">Histórico</p>
             <h2>Execucoes</h2>
         </div>
     </div>
@@ -115,7 +115,7 @@
             <span class="status-badge status-{{ item.status_class }}">{{ item.status }}</span>
         </div>
         {% else %}
-        <p class="empty-state">Nenhuma conciliacao vinculada a cliente ainda.</p>
+        <p class="empty-state">Nenhuma conciliação vinculada a cliente ainda.</p>
         {% endfor %}
     </div>
 </section>
@@ -125,7 +125,7 @@
         if (!clientSelect) return;
         clientSelect.addEventListener("change", () => {
             const clientId = clientSelect.value;
-            const url = clientId ? `/operacoes/conciliacao?client_id=${clientId}` : "/operacoes/conciliacao";
+            const url = clientId ?`/operacoes/conciliacao?client_id=${clientId}` : "/operacoes/conciliacao";
             window.location.href = url;
         });
     })();

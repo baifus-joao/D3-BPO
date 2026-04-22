@@ -1,0 +1,415 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="card-header">
+        <div>
+            <p class="section-kicker">GestÃ£o interna</p>
+            <h2>Novo lançamento financeiro</h2>
+        </div>
+        <div class="actions">
+            <a href="/gestao/contas" class="ghost-button button-link" data-loading-link="true">Voltar ao relat?rio</a>
+        </div>
+    </div>
+    <p class="page-subtitle">Use o mesmo formulário para contas a pagar e contas a receber, inclusive lançamentos parcelados e projeções.</p>
+
+    {% if form_defaults.duplicate_source %}
+    <div class="flash flash-success">
+        Duplicando o lançamento #{{ form_defaults.duplicate_source.id }} ({{ form_defaults.duplicate_source.mode_label }}). Ajuste os dados antes de salvar.
+    </div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <form action="/gestao/financeiro/lancamentos" method="post" class="finance-title-form" id="internal-finance-form" data-defaults='{{ form_defaults|tojson }}' data-category-map='{{ subcategory_map|tojson }}'>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <section class="entry-block">
+            <div class="entry-block-header">
+                <div>
+                    <p class="section-kicker">Natureza</p>
+                    <h3>Conta a pagar ou receber</h3>
+                </div>
+            </div>
+            <div class="entry-row entry-row-top">
+                <div class="field field-type-toggle nature-type">
+                    <span>Tipo</span>
+                    <div class="segmented-control" id="type-segmented">
+                        <button type="button" class="segment-button" data-type-value="SAIDA">Conta a pagar</button>
+                        <button type="button" class="segment-button" data-type-value="ENTRADA">Conta a receber</button>
+                    </div>
+                    <input type="hidden" name="type" id="entry-type" value="{{ form_defaults.type }}">
+                </div>
+
+                <div class="field field-type-toggle nature-mode">
+                    <span>Modo</span>
+                    <div class="segmented-control segmented-control-three" id="mode-segmented">
+                        <button type="button" class="segment-button" data-mode-value="avista">? vista</button>
+                        <button type="button" class="segment-button" data-mode-value="parcelado">Parcelado</button>
+                        <button type="button" class="segment-button" data-mode-value="projecao">Proje?o</button>
+                    </div>
+                    <input type="hidden" name="entry_mode" id="entry-mode" value="{{ form_defaults.entry_mode }}">
+                </div>
+
+                <div class="field field-status-toggle nature-status">
+                    <span>Status</span>
+                    <div class="segmented-control" id="status-segmented">
+                        <button type="button" class="segment-button" data-status-value="previsto">Previsto</button>
+                        <button type="button" class="segment-button" data-status-value="realizado">Realizado</button>
+                    </div>
+                    <input type="hidden" name="status" id="entry-status" value="{{ form_defaults.status }}">
+                </div>
+
+                <label class="field nature-date">
+                    <span>Data base</span>
+                    <input type="date" name="transaction_date" id="entry-date" value="{{ form_defaults.transaction_date }}" required>
+                </label>
+
+                <label class="field field-value-primary nature-value">
+                    <span>Valor</span>
+                    <input type="text" name="amount" id="entry-amount" value="{{ form_defaults.amount }}" inputmode="decimal" placeholder="R$ 0,00" required>
+                </label>
+
+                <label class="field nature-installments">
+                    <span>Parcelas</span>
+                    <input type="number" name="installment_count" id="entry-installment-count" min="2" step="1" value="{{ form_defaults.installment_count }}">
+                </label>
+            </div>
+        </section>
+
+        <section class="entry-block">
+            <div class="entry-block-header">
+                <div>
+                    <p class="section-kicker">Dados da conta</p>
+                    <h3>ClassificaÃ§Ã£o</h3>
+                </div>
+            </div>
+            <div class="entry-row entry-row-bottom internal-finance-entry-grid">
+                <label class="field">
+                    <span>Categoria</span>
+                    <select name="category_id" id="entry-category" required>
+                        <option value="">Selecione</option>
+                        {% for item in categories %}
+                        <option value="{{ item.id }}" data-category-name="{{ item.raw_name }}" data-category-type="{{ item.type }}" {% if form_defaults.category_id == (item.id|string) %}selected{% endif %}>{{ item.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span>Subcategoria</span>
+                    <input type="text" name="subcategory" id="entry-subcategory" value="{{ form_defaults.subcategory }}" list="subcategory-suggestions" required>
+                </label>
+
+                <label class="field">
+                    <span>DescriÃ§Ã£o</span>
+                    <input type="text" name="description" id="entry-description" value="{{ form_defaults.description }}" list="description-suggestions" required>
+                </label>
+
+                <label class="field">
+                    <span>Interessado</span>
+                    <input type="text" name="interested_party" id="entry-interested-party" value="{{ form_defaults.interested_party }}" list="interested-party-suggestions" placeholder="Digite um novo ou selecione um existente" required>
+                </label>
+
+                <label class="field">
+                    <span>Forma</span>
+                    <select name="payment_method_id" id="entry-payment-method">
+                        <option value="">Selecione</option>
+                        {% for item in payment_methods %}
+                        <option value="{{ item.id }}" {% if form_defaults.payment_method_id == (item.id|string) %}selected{% endif %}>{{ item.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span>Conta</span>
+                    <select name="bank_account_id" id="entry-bank-account">
+                        <option value="">Selecione</option>
+                        {% for item in accounts %}
+                        <option value="{{ item.id }}" {% if form_defaults.bank_account_id == (item.id|string) %}selected{% endif %}>{{ item.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span>Loja</span>
+                    <select name="store_id" id="entry-store">
+                        <option value="">Selecione</option>
+                        {% for item in stores %}
+                        <option value="{{ item.id }}" {% if form_defaults.store_id == (item.id|string) %}selected{% endif %}>{{ item.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+        </section>
+
+        <section class="entry-block schedule-panel" id="projection-fields">
+            <div class="entry-block-header">
+                <div>
+                    <p class="section-kicker">Per?odo</p>
+                    <h3>Proje?o mensal</h3>
+                </div>
+                <button type="button" class="ghost-button" id="generate-projection">Gerar projecao</button>
+            </div>
+            <div class="entry-row projection-grid">
+                <label class="field">
+                    <span>Inicio</span>
+                    <input type="date" name="projection_start" id="projection-start" value="{{ form_defaults.projection_start }}">
+                </label>
+                <label class="field">
+                    <span>Fim</span>
+                    <input type="date" name="projection_end" id="projection-end" value="{{ form_defaults.projection_end }}">
+                </label>
+            </div>
+        </section>
+
+        <section class="entry-block schedule-panel" id="schedule-section">
+            <div class="entry-block-header">
+                <div>
+                    <p class="section-kicker">Preview</p>
+                    <h3>Parcelas e linhas geradas</h3>
+                </div>
+                <button type="button" class="ghost-button" id="generate-schedule">Gerar linhas</button>
+            </div>
+            <p class="table-secondary">Voce pode editar individualmente valor e data antes de salvar.</p>
+            <div class="installment-grid" id="schedule-grid"></div>
+        </section>
+
+        <div class="form-actions">
+            <a href="/gestao/contas" class="ghost-button button-link" data-loading-link="true">Cancelar</a>
+            <button type="submit">Salvar lançamento</button>
+        </div>
+    </form>
+
+    <datalist id="subcategory-suggestions"></datalist>
+    <datalist id="description-suggestions">
+        {% for item in description_suggestions %}
+        <option value="{{ item.description }}"></option>
+        {% endfor %}
+    </datalist>
+    <datalist id="interested-party-suggestions">
+        {% for item in interested_suggestions %}
+        <option value="{{ item }}"></option>
+        {% endfor %}
+    </datalist>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(() => {
+    const form = document.getElementById("internal-finance-form");
+    if (!form) return;
+
+    const defaults = JSON.parse(form.dataset.defaults || "{}");
+    const categoryMap = JSON.parse(form.dataset.categoryMap || "{}");
+
+    const typeInput = document.getElementById("entry-type");
+    const modeInput = document.getElementById("entry-mode");
+    const statusInput = document.getElementById("entry-status");
+    const dateInput = document.getElementById("entry-date");
+    const amountInput = document.getElementById("entry-amount");
+    const countInput = document.getElementById("entry-installment-count");
+    const categoryInput = document.getElementById("entry-category");
+    const subcategoryInput = document.getElementById("entry-subcategory");
+    const projectionStartInput = document.getElementById("projection-start");
+    const projectionEndInput = document.getElementById("projection-end");
+    const projectionFields = document.getElementById("projection-fields");
+    const scheduleSection = document.getElementById("schedule-section");
+    const scheduleGrid = document.getElementById("schedule-grid");
+    const subcategoryList = document.getElementById("subcategory-suggestions");
+
+    const typeButtons = form.querySelectorAll("[data-type-value]");
+    const modeButtons = form.querySelectorAll("[data-mode-value]");
+    const statusButtons = form.querySelectorAll("[data-status-value]");
+    const generateScheduleButton = document.getElementById("generate-schedule");
+    const generateProjectionButton = document.getElementById("generate-projection");
+
+    const toCurrency = (raw) => {
+        const normalized = String(raw || "").replace(/\D/g, "");
+        const amount = Number(normalized || "0") / 100;
+        return amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    };
+
+    const parseCurrency = (raw) => {
+        const normalized = String(raw || "").replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
+        const value = Number(normalized || "0");
+        return Number.isFinite(value)  value : 0;
+    };
+
+    const addMonths = (isoDate, amount) => {
+        const [year, month, day] = isoDate.split("-").map((item) => Number(item));
+        const base = new Date(year, month - 1, day);
+        const target = new Date(base.getFullYear(), base.getMonth() + amount, 1);
+        const monthEnd = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+        const safeDay = Math.min(day, monthEnd);
+        target.setDate(safeDay);
+        return target.toISOString().slice(0, 10);
+    };
+
+    const updateSubcategoryOptions = () => {
+        const selected = categoryInput.options[categoryInput.selectedIndex];
+        const categoryName = selected ? selected.dataset.categoryName || "" : "";
+        const options = categoryMap[categoryName] || [];
+        subcategoryList.innerHTML = "";
+        options.forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item;
+            subcategoryList.appendChild(option);
+        });
+    };
+
+    const updateCategoryVisibility = () => {
+        const currentType = typeInput.value;
+        Array.from(categoryInput.options).forEach((option) => {
+            if (!option.value) {
+                option.hidden = false;
+                return;
+            }
+            option.hidden = option.dataset.categoryType !== currentType;
+        });
+        const currentOption = categoryInput.options[categoryInput.selectedIndex];
+        if (currentOption && currentOption.hidden) {
+            categoryInput.value = "";
+        }
+        updateSubcategoryOptions();
+    };
+
+    const applySegment = (buttons, currentValue, targetInput, keyName) => {
+        targetInput.value = currentValue;
+        buttons.forEach((button) => {
+            const datasetName = button.dataset[keyName];
+            button.classList.toggle("is-active", datasetName === currentValue);
+        });
+    };
+
+    const renderScheduleRows = (rows) => {
+        scheduleGrid.innerHTML = "";
+        rows.forEach((row, index) => {
+            const wrapper = document.createElement("div");
+            wrapper.className = "installment-row";
+            wrapper.innerHTML = `
+                <div>
+                    <strong>${row.label}</strong>
+                    <input type="hidden" name="schedule_label" value="${row.label}">
+                </div>
+                <label class="field">
+                    <span>Data</span>
+                    <input type="date" name="schedule_date" value="${row.date}" required>
+                </label>
+                <label class="field">
+                    <span>Valor</span>
+                    <input type="text" name="schedule_amount" value="${toCurrency(row.amount)}" inputmode="decimal" data-currency-input required>
+                </label>
+            `;
+            scheduleGrid.appendChild(wrapper);
+        });
+        bindCurrencyInputs();
+    };
+
+    const buildInstallments = () => {
+        const installmentCount = Math.max(Number(countInput.value || 2), 2);
+        const totalAmount = parseCurrency(amountInput.value);
+        if (!dateInput.value || totalAmount <= 0) return;
+
+        const cents = Math.round(totalAmount * 100);
+        const base = Math.floor(cents / installmentCount);
+        let remainder = cents - (base * installmentCount);
+        const rows = [];
+        for (let index = 0; index < installmentCount; index += 1) {
+            let current = base;
+            if (remainder > 0) {
+                current += 1;
+                remainder -= 1;
+            }
+            rows.push({
+                label: `Parcela ${index + 1}/${installmentCount}`,
+                date: addMonths(dateInput.value, index),
+                amount: toCurrency(String(current)),
+            });
+        }
+        renderScheduleRows(rows);
+    };
+
+    const buildProjection = () => {
+        const amount = parseCurrency(amountInput.value);
+        if (!projectionStartInput.value || !projectionEndInput.value || amount <= 0) return;
+        if (projectionEndInput.value < projectionStartInput.value) return;
+
+        const rows = [];
+        let cursor = projectionStartInput.value;
+        let position = 1;
+        while (cursor <= projectionEndInput.value) {
+            const [year, month] = cursor.split("-").slice(0, 2);
+            rows.push({
+                label: `${String(month).padStart(2, "0")}/${year}`,
+                date: cursor,
+                amount: toCurrency(String(Math.round(amount * 100))),
+            });
+            cursor = addMonths(cursor, 1);
+            position += 1;
+            if (position > 120) break;
+        }
+        renderScheduleRows(rows);
+    };
+
+    const refreshModeUI = () => {
+        const mode = modeInput.value;
+        form.dataset.entryMode = mode;
+        projectionFields.hidden = mode !== "projecao";
+        scheduleSection.hidden = mode === "avista";
+        countInput.closest(".field").hidden = mode !== "parcelado";
+        generateScheduleButton.hidden = mode === "avista";
+        generateProjectionButton.hidden = mode !== "projecao";
+    };
+
+    const bindCurrencyInputs = () => {
+        form.querySelectorAll("[data-currency-input], #entry-amount").forEach((input) => {
+            input.removeEventListener("input", input._currencyHandler || (() => {}));
+            const handler = () => { input.value = toCurrency(input.value); };
+            input._currencyHandler = handler;
+            input.addEventListener("input", handler);
+        });
+    };
+
+    typeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            applySegment(typeButtons, button.dataset.typeValue, typeInput, "typeValue");
+            updateCategoryVisibility();
+        });
+    });
+    modeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            applySegment(modeButtons, button.dataset.modeValue, modeInput, "modeValue");
+            refreshModeUI();
+        });
+    });
+    statusButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            applySegment(statusButtons, button.dataset.statusValue, statusInput, "statusValue");
+        });
+    });
+
+    generateScheduleButton.addEventListener("click", () => {
+        if (modeInput.value === "parcelado") buildInstallments();
+        if (modeInput.value === "projecao") buildProjection();
+    });
+    generateProjectionButton.addEventListener("click", buildProjection);
+    categoryInput.addEventListener("change", updateCategoryVisibility);
+
+    applySegment(typeButtons, defaults.type || "SAIDA", typeInput, "typeValue");
+    applySegment(modeButtons, defaults.entry_mode || "avista", modeInput, "modeValue");
+    applySegment(statusButtons, defaults.status || "previsto", statusInput, "statusValue");
+    refreshModeUI();
+    updateCategoryVisibility();
+    bindCurrencyInputs();
+
+    if (defaults.amount) {
+        amountInput.value = toCurrency(defaults.amount);
+    }
+    if (Array.isArray(defaults.schedule_rows) && defaults.schedule_rows.length) {
+        renderScheduleRows(defaults.schedule_rows);
+    } else if (modeInput.value === "parcelado") {
+        buildInstallments();
+    }
+})();
+</script>
+{% endblock %}

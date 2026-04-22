@@ -41,3 +41,4 @@ As pendências conectam a conciliação à operação diária. Elas evitam que u
 - [[sistema/arquitetura]]
 - [[decisoes/decisoes-iniciais]]
 - [[clientes/README]]
+- [[processos/pendencias-pos-refatoracao-e-deploy]]

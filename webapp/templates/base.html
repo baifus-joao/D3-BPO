@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="/static/styles.css?v=20260323-3">
     {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body class="{% if current_area == 'operacoes' %}app-operations{% endif %}">
     <div class="loading-overlay" id="page-loading" aria-hidden="true">
         <div class="loading-card" role="status" aria-live="polite">
             <div class="loading-spinner"></div>
@@ -26,7 +26,14 @@
     <div class="shell">
         <aside class="sidebar">
             <div class="sidebar-system-switch">
-                <span class="context-chip">{{ current_area_meta.label }}</span>
+                <div class="sidebar-brand-block">
+                    <span class="context-chip">{{ current_area_meta.label }}</span>
+                    {% if current_area == "operacoes" %}
+                    <small>Plataforma operacional do BPO</small>
+                    {% else %}
+                    <small>{{ current_area_meta.title }}</small>
+                    {% endif %}
+                </div>
                 <a href="/hub" class="secondary-link" data-loading-link="true" data-loading-text="Abrindo hub...">Trocar sistema</a>
             </div>
 
@@ -41,7 +48,7 @@
             </section>
 
             <section class="sidebar-box">
-                <span class="sidebar-label">Sessao</span>
+                <span class="sidebar-label">Sessão</span>
                 <strong>{{ current_user.name }}</strong>
                 <span>{{ current_user.role_label }}</span>
                 <span>{{ current_user.email }}</span>
@@ -49,11 +56,53 @@
         </aside>
 
         <div class="content-area">
-            <header class="header">
+            {% if current_area == "operacoes" %}
+            <div class="ops-topbar">
+                <div class="ops-topbar-search">
+                    <span class="ops-search-icon">⌕</span>
+                    <input type="text" placeholder="Buscar clientes, projetos, tarefas e demandas..." aria-label="Busca operacional">
+                    <span class="ops-shortcut">Ctrl + K</span>
+                </div>
+                <div class="ops-topbar-actions">
+                    <div class="time-dock {% if current_time_entry %}is-active{% endif %}">
+                        {% if current_time_entry %}
+                        <div class="time-dock-copy">
+                            <span class="metric-label">Tarefa atual</span>
+                            <strong>{{ current_time_entry.task_title }}</strong>
+                            <span>{{ current_time_entry.duration_label }} · {{ current_time_entry.client_name }}</span>
+                        </div>
+                        <form action="/operacoes/tempo/{{ current_time_entry.id }}/pausar" method="post" data-loading-form="true" data-loading-text="Pausando tempo...">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="redirect_to" value="{{ request.url.path }}">
+                            <button type="submit" class="time-dock-button">Pausar</button>
+                        </form>
+                        {% else %}
+                        <div class="time-dock-copy">
+                            <span class="metric-label">Tempo</span>
+                            <strong>Nenhuma tarefa em andamento</strong>
+                            <span>Abra Tarefas ou Tempo para iniciar um apontamento.</span>
+                        </div>
+                        <a href="/operacoes/gestor-tarefas/tempo" class="ghost-button button-link" data-loading-link="true">Abrir tempo</a>
+                        {% endif %}
+                    </div>
+                    <button type="button" class="theme-toggle" id="theme-toggle">Tema claro</button>
+                    <form action="/logout" method="post" data-loading-form="true" data-loading-text="Saindo...">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="ghost-button">Sair</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            <header class="header {% if current_area == 'operacoes' %}header-operations{% endif %}">
                 <div>
+                    {% if current_area == "operacoes" %}
+                    <p class="section-kicker">Operação do BPO</p>
+                    {% endif %}
                     <h1 class="page-title">{{ page_title }}</h1>
                     <p class="page-subtitle">{{ page_subtitle }}</p>
                 </div>
+                {% if current_area != "operacoes" %}
                 <div class="header-actions">
                     <button type="button" class="theme-toggle" id="theme-toggle">Tema claro</button>
                     <form action="/logout" method="post" data-loading-form="true" data-loading-text="Saindo...">
@@ -61,6 +110,7 @@
                         <button type="submit" class="ghost-button">Sair</button>
                     </form>
                 </div>
+                {% endif %}
             </header>
 
             {% if flash %}

@@ -74,7 +74,7 @@
             {% for item in categories %}
             <div class="cadastro-item">
                 <div class="cadastro-item-main">
-                    <strong>{{ item.name }}</strong>
+                    <strong>{{ item.display_name or item.name }}</strong>
                     <span>{{ item.type }}</span>
                 </div>
                 <span class="cadastro-color" style="background: {{ item.color }}"></span>
@@ -83,6 +83,7 @@
             <p class="empty-state">Nenhuma categoria cadastrada.</p>
             {% endfor %}
         </div>
+        <p class="table-secondary">As categorias principais do financeiro interno são pré-carregadas automaticamente.</p>
         {% if permissions.is_admin %}
         <form action="/cadastros/categorias" method="post" class="cadastro-form cadastro-form-category" data-loading-form="true" data-loading-text="Salvando categoria...">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
