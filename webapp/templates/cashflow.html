@@ -332,7 +332,7 @@
 
             amountInput.addEventListener("input", () => {
                 const digits = amountInput.value.replace(/\D/g, "");
-                amountInput.value = digits  formatCurrency(digits) : "";
+                amountInput.value = digits ? formatCurrency(digits) : "";
             });
 
             typeButtons.forEach((button) => {
@@ -349,7 +349,7 @@
 
             [storeInput, paymentInput, accountInput].forEach((input) => {
                 input.addEventListener("change", () => {
-                    const key = input === storeInput  storageKeys.store : input === paymentInput  storageKeys.payment : storageKeys.account;
+                    const key = input === storeInput ? storageKeys.store : input === paymentInput ? storageKeys.payment : storageKeys.account;
                     localStorage.setItem(key, input.value);
                 });
             });
@@ -364,7 +364,7 @@
 
             document.addEventListener("keydown", (event) => {
                 const target = event.target;
-                const tagName = target && target.tagName  target.tagName.toLowerCase() : "";
+                const tagName = target && target.tagName ? target.tagName.toLowerCase() : "";
                 const typingField = tagName === "input" || tagName === "textarea";
                 if (!typingField && event.key.toLowerCase() === "e") {
                     applyTypeVisual("ENTRADA");

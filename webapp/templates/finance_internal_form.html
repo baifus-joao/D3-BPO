@@ -1,13 +1,13 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block content %}
 <section class="card">
     <div class="card-header">
         <div>
-            <p class="section-kicker">GestÃ£o interna</p>
+            <p class="section-kicker">Gestão interna</p>
             <h2>Novo lançamento financeiro</h2>
         </div>
         <div class="actions">
-            <a href="/gestao/contas" class="ghost-button button-link" data-loading-link="true">Voltar ao relat?rio</a>
+            <a href="/gestao/contas" class="ghost-button button-link" data-loading-link="true">Voltar ao relatório</a>
         </div>
     </div>
     <p class="page-subtitle">Use o mesmo formulário para contas a pagar e contas a receber, inclusive lançamentos parcelados e projeções.</p>
@@ -43,9 +43,9 @@
                 <div class="field field-type-toggle nature-mode">
                     <span>Modo</span>
                     <div class="segmented-control segmented-control-three" id="mode-segmented">
-                        <button type="button" class="segment-button" data-mode-value="avista">? vista</button>
+                        <button type="button" class="segment-button" data-mode-value="avista">À vista</button>
                         <button type="button" class="segment-button" data-mode-value="parcelado">Parcelado</button>
-                        <button type="button" class="segment-button" data-mode-value="projecao">Proje?o</button>
+                        <button type="button" class="segment-button" data-mode-value="projecao">Projeção</button>
                     </div>
                     <input type="hidden" name="entry_mode" id="entry-mode" value="{{ form_defaults.entry_mode }}">
                 </div>
@@ -80,7 +80,7 @@
             <div class="entry-block-header">
                 <div>
                     <p class="section-kicker">Dados da conta</p>
-                    <h3>ClassificaÃ§Ã£o</h3>
+                    <h3>Classificação</h3>
                 </div>
             </div>
             <div class="entry-row entry-row-bottom internal-finance-entry-grid">
@@ -100,7 +100,7 @@
                 </label>
 
                 <label class="field">
-                    <span>DescriÃ§Ã£o</span>
+                    <span>Descrição</span>
                     <input type="text" name="description" id="entry-description" value="{{ form_defaults.description }}" list="description-suggestions" required>
                 </label>
 
@@ -144,8 +144,8 @@
         <section class="entry-block schedule-panel" id="projection-fields">
             <div class="entry-block-header">
                 <div>
-                    <p class="section-kicker">Per?odo</p>
-                    <h3>Proje?o mensal</h3>
+                    <p class="section-kicker">Período</p>
+                    <h3>Projeção mensal</h3>
                 </div>
                 <button type="button" class="ghost-button" id="generate-projection">Gerar projecao</button>
             </div>
@@ -232,7 +232,7 @@
     const parseCurrency = (raw) => {
         const normalized = String(raw || "").replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
         const value = Number(normalized || "0");
-        return Number.isFinite(value)  value : 0;
+        return Number.isFinite(value) ? value : 0;
     };
 
     const addMonths = (isoDate, amount) => {

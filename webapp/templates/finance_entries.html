@@ -8,7 +8,7 @@
         </div>
         <div class="actions">
             <a href="{{ page_urls.export }}" class="ghost-button button-link" data-loading-link="true" data-loading-text="Gerando planilha...">Exportar</a>
-            <a href="{{ page_urls.new_entry }}" class="button-link" data-loading-link="true" data-loading-text="Abrindo formulário...">Novo lançamento</a>
+            <a href="{{ page_urls.new_entry }}" class="button-link" data-loading-link="true" data-loading-text="Abrindo formul&aacute;rio...">Novo lan&ccedil;amento</a>
         </div>
     </div>
     <p class="page-subtitle">{{ module_meta.description }}</p>
@@ -19,12 +19,12 @@
             <input type="date" name="date_from" value="{{ filters.date_from }}">
         </label>
         <label class="field field-compact">
-            <span>At?</span>
+            <span>At&eacute;</span>
             <input type="date" name="date_to" value="{{ filters.date_to }}">
         </label>
         <label class="field field-compact">
             <span>Busca</span>
-            <input type="text" name="search" value="{{ filters.search }}" placeholder="Descrição, interessado ou subcategoria">
+            <input type="text" name="search" value="{{ filters.search }}" placeholder="Descri&ccedil;&atilde;o, interessado ou subcategoria">
         </label>
         <label class="field field-compact">
             <span>Interessado</span>
@@ -48,13 +48,13 @@
             <select name="type">
                 <option value="">Todos</option>
                 <option value="ENTRADA" {% if filters.type == "ENTRADA" %}selected{% endif %}>Entrada</option>
-                <option value="SAIDA" {% if filters.type == "SAIDA" %}selected{% endif %}>Saida</option>
+                <option value="SAIDA" {% if filters.type == "SAIDA" %}selected{% endif %}>Sa&iacute;da</option>
             </select>
         </label>
         {% if module_meta.fixed_entry_mode %}
         <label class="field field-compact">
             <span>Modo</span>
-            <input type="text" value="Proje?o" readonly>
+            <input type="text" value="Proje&ccedil;&atilde;o" readonly>
             <input type="hidden" name="entry_mode" value="projecao">
         </label>
         {% else %}
@@ -62,9 +62,9 @@
             <span>Modo</span>
             <select name="entry_mode">
                 <option value="">Todos</option>
-                <option value="avista" {% if filters.entry_mode == "avista" %}selected{% endif %}>? vista</option>
+                <option value="avista" {% if filters.entry_mode == "avista" %}selected{% endif %}>&Agrave; vista</option>
                 <option value="parcelado" {% if filters.entry_mode == "parcelado" %}selected{% endif %}>Parcelado</option>
-                <option value="projecao" {% if filters.entry_mode == "projecao" %}selected{% endif %}>Proje?o</option>
+                <option value="projecao" {% if filters.entry_mode == "projecao" %}selected{% endif %}>Proje&ccedil;&atilde;o</option>
             </select>
         </label>
         {% endif %}
@@ -111,7 +111,7 @@
         <strong>{{ summary.entradas_periodo|currency }}</strong>
     </article>
     <article class="card metric-card kpi-card">
-        <span class="metric-label">Saidas</span>
+        <span class="metric-label">Sa&iacute;das</span>
         <strong>{{ summary.saidas_periodo|currency }}</strong>
     </article>
     <article class="card metric-card kpi-card">
@@ -135,16 +135,16 @@
                     <th>Data</th>
                     <th>Tipo</th>
                     <th>Conta</th>
-                    <th>Classificação</th>
+                    <th>Classifica&ccedil;&atilde;o</th>
                     <th>Status</th>
                     <th>Valor</th>
-                    <th>A?es</th>
+                    <th>A&ccedil;&otilde;es</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in transactions %}
                 <tr>
-                    <td>{{ item.date}}</td>
+                    <td>{{ item.date }}</td>
                     <td>{{ item.type }}</td>
                     <td>
                         <strong>{{ item.description }}</strong>
@@ -170,9 +170,9 @@
     <p class="table-secondary">Mostrando os 50 registros mais recentes. Use os filtros para refinar a consulta.</p>
     {% endif %}
     {% else %}
-    <p class="empty-state">{{ module_meta.empty_state}}</p>
+    <p class="empty-state">{{ module_meta.empty_state }}</p>
     {% endif %}
 </section>
 
-<a href="{{ page_urls.new_entry }}" class="finance-fab" aria-label="Novo lançamento" data-loading-link="true" data-loading-text="Abrindo formulário...">+</a>
+<a href="{{ page_urls.new_entry }}" class="finance-fab" aria-label="Novo lan&ccedil;amento" data-loading-link="true" data-loading-text="Abrindo formul&aacute;rio...">+</a>
 {% endblock %}

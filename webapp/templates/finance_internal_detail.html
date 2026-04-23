@@ -52,9 +52,9 @@
             <span>Realizado: {{ transaction.realized_date }}</span>
         </div>
         <div class="metric-card">
-            <span class="metric-label">Proje?o</span>
+            <span class="metric-label">ProjeÃ§Ã£o</span>
             <strong>{{ transaction.projection_start }}</strong>
-            <span>At?{{ transaction.projection_end }}</span>
+            <span>Até {{ transaction.projection_end }}</span>
         </div>
     </div>
 </section>
@@ -62,7 +62,7 @@
 <section class="card">
     <div class="card-header">
         <div>
-            <p class="section-kicker">Composicao</p>
+            <p class="section-kicker">ComposiÃ§Ã£o</p>
             <h2>Itens vinculados</h2>
         </div>
     </div>
@@ -71,7 +71,7 @@
         <table class="data-table finance-report-table">
             <thead>
                 <tr>
-                    <th>Referencia</th>
+                    <th>ReferÃªncia</th>
                     <th>Data</th>
                     <th>Status</th>
                     <th>Valor</th>
@@ -81,7 +81,7 @@
                 {% for row in related_rows %}
                 <tr>
                     <td>{{ row.label }}</td>
-                    <td>{{ row.date}}</td>
+                    <td>{{ row.date }}</td>
                     <td><span class="status-badge status-{{ row.status_class }}">{{ row.status }}</span></td>
                     <td>{{ row.amount }}</td>
                 </tr>

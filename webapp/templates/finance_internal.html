@@ -3,15 +3,15 @@
 <section class="card">
     <div class="card-header">
         <div>
-            <p class="section-kicker">Gestão interna</p>
+            <p class="section-kicker">Gest&atilde;o interna</p>
             <h2>Contas a Pagar e Receber</h2>
         </div>
         <div class="actions">
             <a href="{{ page_urls.export }}" class="ghost-button button-link" data-loading-link="true" data-loading-text="Gerando planilha...">Exportar</a>
-            <a href="{{ page_urls.new_entry }}" class="button-link" data-loading-link="true" data-loading-text="Abrindo formulário...">Novo lançamento</a>
+            <a href="{{ page_urls.new_entry }}" class="button-link" data-loading-link="true" data-loading-text="Abrindo formul&aacute;rio...">Novo lan&ccedil;amento</a>
         </div>
     </div>
-    <p class="page-subtitle">Relatório explícito de contas a pagar e contas a receber da gestão interna da D3.</p>
+    <p class="page-subtitle">Relat&oacute;rio expl&iacute;cito de contas a pagar e contas a receber da gest&atilde;o interna da D3.</p>
 
     <form action="{{ page_urls.base }}" method="get" class="cashflow-filter-grid internal-finance-filter-grid" data-loading-form="true" data-loading-text="Aplicando filtros...">
         <label class="field field-compact">
@@ -19,12 +19,12 @@
             <input type="date" name="date_from" value="{{ filters.date_from }}">
         </label>
         <label class="field field-compact">
-            <span>At?</span>
+            <span>At&eacute;</span>
             <input type="date" name="date_to" value="{{ filters.date_to }}">
         </label>
         <label class="field field-compact">
             <span>Busca</span>
-            <input type="text" name="search" value="{{ filters.search }}" placeholder="Descrição, interessado ou subcategoria">
+            <input type="text" name="search" value="{{ filters.search }}" placeholder="Descri&ccedil;&atilde;o, interessado ou subcategoria">
         </label>
         <label class="field field-compact">
             <span>Interessado</span>
@@ -47,9 +47,9 @@
             <span>Modo</span>
             <select name="entry_mode">
                 <option value="">Todos</option>
-                <option value="avista" {% if filters.entry_mode == "avista" %}selected{% endif %}>? vista</option>
+                <option value="avista" {% if filters.entry_mode == "avista" %}selected{% endif %}>&Agrave; vista</option>
                 <option value="parcelado" {% if filters.entry_mode == "parcelado" %}selected{% endif %}>Parcelado</option>
-                <option value="projecao" {% if filters.entry_mode == "projecao" %}selected{% endif %}>Proje?o</option>
+                <option value="projecao" {% if filters.entry_mode == "projecao" %}selected{% endif %}>Proje&ccedil;&atilde;o</option>
             </select>
         </label>
         <label class="field field-compact">
@@ -108,7 +108,7 @@
     <article class="card" id="contas-pagar">
         <div class="card-header">
             <div>
-                <p class="section-kicker">Relatório</p>
+                <p class="section-kicker">Relat&oacute;rio</p>
                 <h2>Contas a pagar</h2>
             </div>
             <div class="quick-entry-hints">
@@ -124,16 +124,16 @@
                     <tr>
                         <th>Data</th>
                         <th>Conta</th>
-                        <th>Classificação</th>
+                        <th>Classifica&ccedil;&atilde;o</th>
                         <th>Status</th>
                         <th>Valor</th>
-                        <th>A?es</th>
+                        <th>A&ccedil;&otilde;es</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for item in payables_report.rows %}
                     <tr>
-                        <td>{{ item.date}}</td>
+                        <td>{{ item.date }}</td>
                         <td>
                             <strong>{{ item.description }}</strong>
                             <span class="table-secondary">{{ item.interested_party }}</span>
@@ -165,7 +165,7 @@
     <article class="card" id="contas-receber">
         <div class="card-header">
             <div>
-                <p class="section-kicker">Relatório</p>
+                <p class="section-kicker">Relat&oacute;rio</p>
                 <h2>Contas a receber</h2>
             </div>
             <div class="quick-entry-hints">
@@ -181,16 +181,16 @@
                     <tr>
                         <th>Data</th>
                         <th>Conta</th>
-                        <th>Classificação</th>
+                        <th>Classifica&ccedil;&atilde;o</th>
                         <th>Status</th>
                         <th>Valor</th>
-                        <th>A?es</th>
+                        <th>A&ccedil;&otilde;es</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for item in receivables_report.rows %}
                     <tr>
-                        <td>{{ item.date}}</td>
+                        <td>{{ item.date }}</td>
                         <td>
                             <strong>{{ item.description }}</strong>
                             <span class="table-secondary">{{ item.interested_party }}</span>
@@ -220,5 +220,5 @@
     </article>
 </section>
 
-<a href="{{ page_urls.new_entry }}" class="finance-fab" aria-label="Novo lançamento" data-loading-link="true" data-loading-text="Abrindo formulário...">+</a>
+<a href="{{ page_urls.new_entry }}" class="finance-fab" aria-label="Novo lan&ccedil;amento" data-loading-link="true" data-loading-text="Abrindo formul&aacute;rio...">+</a>
 {% endblock %}
